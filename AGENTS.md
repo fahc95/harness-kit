@@ -17,7 +17,7 @@ A Claude Code plugin, distributed through the marketplace in this same repo, tha
 
 ## Git and PRs
 
-- GitHub flow: `main` is the released plugin. Every change reaches `main` through a PR, squash-merged, with Freddy's explicit approval. Never push to `main`. Today that is a rule only: no local pre-push guard or branch protection enforces it yet.
+- GitHub flow: `main` is the released plugin. Every change reaches `main` through a PR, squash-merged, with Freddy's explicit approval. Never push to `main`. `.githooks/pre-push` refuses it once you run `git config core.hooksPath .githooks` (once per clone; worktrees share it). Only Freddy uses the `HARNESS_KIT_ALLOW_PUSH_MAIN=1` override. Never use `--no-verify`. Server-side branch protection is not set up.
 - Branch from `main` as `fredz/<type>-<slug>` (a Conventional Commit type plus 2 to 5 kebab-case words), in a worktree; the main checkout stays on `main`.
 - Commits and PR titles are Conventional Commits. PR descriptions have no em dashes, no "Generated with Claude Code" footer and no co-author line.
 - A user-visible change bumps `version` in `plugins/harness-kit/.claude-plugin/plugin.json` and adds a `CHANGELOG.md` entry in the same PR.
@@ -35,10 +35,10 @@ claude plugin validate --strict plugins/harness-kit
 ```
 
 ```bash
-node --test "plugins/**/*.test.mjs"
+node --test "plugins/**/*.test.mjs" ".githooks/*.test.mjs"
 ```
 
-Tests live next to the installer scripts. Fixture repos under `test/fixtures/` are inputs, not tests, and may contain failing tests on purpose.
+Tests live next to the installer scripts and the git hooks. Fixture repos under `test/fixtures/` are inputs, not tests, and may contain failing tests on purpose.
 
 If a check can't run, report "not run: <reason>", never "passed".
 

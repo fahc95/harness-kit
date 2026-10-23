@@ -35,6 +35,7 @@ Then, inside the target repo, in a worktree on a fresh branch, run `/harness-kit
 ```
 harness-kit/
 ├── .claude-plugin/marketplace.json   # the marketplace (this repo)
+├── .githooks/pre-push                # repo tooling: refuses pushes to main
 ├── .github/workflows/ci.yml          # validate manifests, run script tests
 ├── docs/design.md                    # why the harness is shaped this way
 ├── docs/decisions.md                 # the kit's own ADR log
