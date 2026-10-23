@@ -29,10 +29,10 @@ jobs:
       - name: Validate plugin
         run: claude plugin validate --strict plugins/harness-kit
 
-      # Script tests (render, merge-settings, manifest, detect) arrive in Phase 3.
-      # Scoped to the plugin so fixture repos under test/fixtures (which include a
-      # deliberately failing test) never run here. Template tests end in .tmpl.
+      # Script tests (render, merge-settings, manifest, detect) arrive in Phase 3, plus the
+      # repo's own git hook tests. Scoped so fixture repos under test/fixtures (which include
+      # a deliberately failing test) never run here. Template tests end in .tmpl.
       - name: Script tests
-        run: node --test "plugins/**/*.test.mjs"
+        run: node --test "plugins/**/*.test.mjs" ".githooks/*.test.mjs"
 
       # TODO(2026-10-23, Freddy): add the fixture render check (test/fixtures/*) with the Phase 3 installer.
