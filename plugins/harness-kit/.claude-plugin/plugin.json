@@ -1,0 +1,9 @@
+{
+  "name": "harness-kit",
+  "version": "0.1.0",
+  "description": "Installs a provider-agnostic agentic development harness (personas, skills, workflows, rules, hooks, memory) into a project, adapted to that project. Ships one user-invoked installer skill and inert templates; registers no agents, hooks or commands globally.",
+  "author": {
+    "name": "Freddy Hz"
+  },
+  "repository": "https://github.com/fahc95/harness-kit"
+}

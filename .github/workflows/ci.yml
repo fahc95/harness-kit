@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Pinned so a CLI release can't change validation under us; bump on purpose.
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.261
+
+      - name: Validate marketplace manifest
+        run: claude plugin validate --strict .
+
+      - name: Validate plugin
+        run: claude plugin validate --strict plugins/harness-kit
+
+      # Script tests (render, merge-settings, manifest, detect) arrive in Phase 3.
+      # Scoped to the plugin so fixture repos under test/fixtures (which include a
+      # deliberately failing test) never run here. Template tests end in .tmpl.
+      - name: Script tests
+        run: node --test "plugins/**/*.test.mjs"
+
+      # TODO(2026-10-23, Freddy): add the fixture render check (test/fixtures/*) with the Phase 3 installer.

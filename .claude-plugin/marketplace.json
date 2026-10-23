@@ -1,0 +1,16 @@
+{
+  "name": "harness-kit",
+  "owner": {
+    "name": "Freddy Hz"
+  },
+  "metadata": {
+    "description": "Freddy's personal marketplace for the harness-kit plugin."
+  },
+  "plugins": [
+    {
+      "name": "harness-kit",
+      "source": "./plugins/harness-kit",
+      "description": "Installs a provider-agnostic agentic development harness (personas, skills, workflows, rules, hooks, memory) into a project, adapted to that project."
+    }
+  ]
+}
