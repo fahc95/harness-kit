@@ -202,6 +202,10 @@ describe("vocabulary", () => {
       assert.equal(cmd(bad), false, bad);
     }
     assert.equal(db("npm run db:migrate:local"), true);
+    assert.equal(db("npm run db:migrate:PROD"), false);
+    const risky = (v) => valueMatches(vocabulary.tokens.RISKY_PATHS_JSON, vocabulary, [v]);
+    for (const bad of [".", "./", "a/../b", "/abs"]) assert.equal(risky(bad), false, bad);
+    assert.equal(risky(".github/workflows/"), true);
   });
 
   test("flag names follow the grammar", () => {
@@ -373,8 +377,6 @@ describe("modules.json", () => {
   });
 });
 
-// Render the core hooks and settings with the vocabulary examples into a temp repo, then run
-// the rendered guard tests there: a template that renders but doesn't work fails here.
 // Render each module with the vocabulary examples into a temp repo, as the installer will
 // (registry targets, file `when` flags, git hook modes), then run the rendered tests there:
 // a template that renders but doesn't work fails here.
@@ -445,12 +447,15 @@ describe("rendered core hooks", () => {
     }
   });
 
-  test("guards.test carries the vocabulary's production list", () => {
+  test("guards.test carries the vocabulary's production list, case-insensitive", () => {
     const text = read("core/dot-claude/hooks/guards.test.mjs.tmpl");
-    const block = text.slice(text.indexOf("const PRODUCTION = ["), text.indexOf("];", text.indexOf("const PRODUCTION = [")));
-    const inTest = [...block.matchAll(/^\s*\/(.+)\/i?,$/gm)].map((m) => m[1].replaceAll("\\/", "/"));
-    // Host names the kit lint keeps out of templates are only in the vocabulary.
-    const inVocabulary = vocabulary.rejectCommandPatterns.production.map((p) => p.replace("|railway", ""));
+    const start = text.indexOf("const PRODUCTION = [");
+    const block = text.slice(start, text.indexOf("];", start));
+    const inTest = [...block.matchAll(/^\s*\/(.+)\/([a-z]*),$/gm)].map((m) => [m[1].replaceAll("\\/", "/"), m[2]]);
+    // Alternatives the kit lint keeps out of templates (host names) are only in the vocabulary.
+    const templateSafe = (p) =>
+      p.replace(/\|([a-z-]+)/g, (alt, name) => (FORBIDDEN.some((re) => re.test(name)) ? "" : alt));
+    const inVocabulary = vocabulary.rejectCommandPatterns.production.map((p) => [templateSafe(p), "i"]);
     assert.deepEqual(inTest, inVocabulary);
   });
 });
@@ -461,6 +466,12 @@ describe("rendered common modules", () => {
       renderModule("open-pr", root, examples, allFlags(true));
       const passed = runRenderedTest(path.join(root, ".agents/skills/open-pr/scripts/check-pr.test.mjs"));
       assert.ok(passed >= 25, `only ${passed} check-pr tests ran`);
+    }));
+
+  test("open-pr: check-pr.test passes with no risky paths", () =>
+    withTempRepo((root) => {
+      renderModule("open-pr", root, { ...examples, RISKY_PATHS_JSON: [] }, allFlags(true));
+      runRenderedTest(path.join(root, ".agents/skills/open-pr/scripts/check-pr.test.mjs"));
     }));
 
   test("githooks-pre-push: the hook is executable and its test passes", () =>

@@ -116,9 +116,9 @@
     },
     "CMD_HOOK_TESTS": {
       "type": "string",
-      "description": "The command that runs the harness's own script tests (hook guards, skill scripts, git hooks).",
+      "description": "The command that runs the harness's own script tests: one quoted glob per installed module that ships tests (.claude/hooks for core, .agents/skills/*/scripts for skills such as open-pr, .githooks for the pre-push guard).",
       "source": "render",
-      "example": "node --test \".claude/hooks/*.test.mjs\""
+      "example": "node --test \".claude/hooks/*.test.mjs\" \".agents/skills/*/scripts/*.test.mjs\" \".githooks/*.test.mjs\""
     },
     "DB_PATH": {
       "type": "path",
@@ -238,8 +238,8 @@
     },
     "RISKY_PATHS_JSON": {
       "type": "json-array",
-      "itemPattern": "^(?!.*\\.\\.)[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*/?$",
-      "description": "Paths whose change needs a Rollback line in the PR Notes. An entry ending in / is a folder prefix; any other entry is a file name matched at any depth.",
+      "itemPattern": "^(?!\\.?/?$)(?!.*\\.\\.)[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*/?$",
+      "description": "Paths whose change needs a Rollback line in the PR Notes. An entry ending in / is a folder prefix; any other entry is a file name matched at any depth. A folder entry must end in /: without it, the entry only matches a file of that name.",
       "source": "detect (CI workflows, container and deploy files, schema folder), confirmed by the owner",
       "example": [
         ".github/workflows/",

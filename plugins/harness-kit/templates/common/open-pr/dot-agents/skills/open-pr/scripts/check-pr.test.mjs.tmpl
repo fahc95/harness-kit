@@ -88,6 +88,10 @@ describe("checkPr", () => {
   for (const entry of RISKY_PATH_ENTRIES) {
     test(`requires a rollback note when ${entry} changes`, () =>
       fails({ changedFiles: [touching(entry)] }, /rollback note is required/));
+    if (!entry.endsWith("/")) {
+      test(`requires a rollback note when ${entry} changes at the repo root`, () =>
+        fails({ changedFiles: [entry] }, /rollback note is required/));
+    }
   }
   if (RISKY_PATH_ENTRIES.length) {
     const file = touching(RISKY_PATH_ENTRIES[0]);

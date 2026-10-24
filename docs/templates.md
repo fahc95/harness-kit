@@ -48,5 +48,6 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 2. Add any new token or flag to `vocabulary.json`. Every entry must be used: the lint test rejects dead ones, so add an entry in the same PR as its first use.
 3. List the file in its module in `modules.json`, with its `target` (the derived path), `onExisting` (`merge`, `kit-new` or `skip`), `when` if the file depends on a flag, `adapt: true` if it carries `kit:adapt` markers, and `mode` only for `.githooks/` files.
 4. A settings fragment (`settings.fragment.json.tmpl`) is listed under the module's `settings`, not `files`: the installer merges it into `.claude/settings.json` instead of copying it.
-5. A module that templates can gate on gets a `flag` (`module.<name>`) in `modules.json` and the same flag in `vocabulary.json`. The lint test checks they pair up.
-6. Run `node --test "plugins/**/*.test.mjs"`. It also renders each module into a temp repo, the way the installer will, and runs the rendered tests there.
+5. `postInstall` lists commands the installer proposes after writing the files. Each one runs only with the owner's approval, and never silently replaces existing state: for `git config core.hooksPath .githooks`, the installer first reads the current value, and if it is set to something else (husky, lefthook), it shows that and asks instead of overwriting it.
+6. A module that templates can gate on gets a `flag` (`module.<name>`) in `modules.json` and the same flag in `vocabulary.json`. The lint test checks they pair up.
+7. Run `node --test "plugins/**/*.test.mjs"`. It also renders each module into a temp repo, the way the installer will, and runs the rendered tests there.
