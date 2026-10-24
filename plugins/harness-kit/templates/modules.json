@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "description": "Module registry. Each module lists its template files and the target path each renders to. The installer offers common modules by their offer text, skips those whose when flag is false, and records what it installed in .agents/harness.json. See docs/templates.md in the kit repo.",
+  "modules": [
+    {
+      "id": "core",
+      "tier": "core",
+      "title": "Core harness",
+      "offer": "AGENTS.md and CLAUDE.md, the architect, planner, reviewer, retro and researcher personas, the plan, review, feature and retro workflows, rules, and memory seeds.",
+      "default": true,
+      "requires": [],
+      "when": null,
+      "files": [
+        {
+          "template": "core/AGENTS.md.tmpl",
+          "target": "AGENTS.md",
+          "onExisting": "merge",
+          "adapt": true
+        },
+        {
+          "template": "core/CLAUDE.md.tmpl",
+          "target": "CLAUDE.md",
+          "onExisting": "merge"
+        },
+        {
+          "template": "core/docs/next-steps.md.tmpl",
+          "target": "docs/next-steps.md",
+          "onExisting": "merge",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/memory/decisions.md.tmpl",
+          "target": ".agents/memory/decisions.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-agents/memory/learning-log.md.tmpl",
+          "target": ".agents/memory/learning-log.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-agents/memory/lessons.md.tmpl",
+          "target": ".agents/memory/lessons.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-agents/personas/architect.md.tmpl",
+          "target": ".agents/personas/architect.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/personas/planner.md.tmpl",
+          "target": ".agents/personas/planner.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/personas/researcher.md.tmpl",
+          "target": ".agents/personas/researcher.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-agents/personas/retro.md.tmpl",
+          "target": ".agents/personas/retro.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-agents/personas/reviewer.md.tmpl",
+          "target": ".agents/personas/reviewer.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/rules/commands.md.tmpl",
+          "target": ".agents/rules/commands.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/rules/env-and-secrets.md.tmpl",
+          "target": ".agents/rules/env-and-secrets.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/rules/production-parity.md.tmpl",
+          "target": ".agents/rules/production-parity.md",
+          "when": "has.container",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/workflows/feature.md.tmpl",
+          "target": ".agents/workflows/feature.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/workflows/plan.md.tmpl",
+          "target": ".agents/workflows/plan.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-agents/workflows/retro.md.tmpl",
+          "target": ".agents/workflows/retro.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-agents/workflows/review.md.tmpl",
+          "target": ".agents/workflows/review.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-claude/commands/feature.md.tmpl",
+          "target": ".claude/commands/feature.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/commands/plan.md.tmpl",
+          "target": ".claude/commands/plan.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/commands/retro.md.tmpl",
+          "target": ".claude/commands/retro.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/commands/review.md.tmpl",
+          "target": ".claude/commands/review.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/rules/env-and-secrets.md.tmpl",
+          "target": ".claude/rules/env-and-secrets.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-claude/rules/production-parity.md.tmpl",
+          "target": ".claude/rules/production-parity.md",
+          "when": "has.container",
+          "onExisting": "kit-new",
+          "adapt": true
+        }
+      ],
+      "settings": [],
+      "postInstall": []
+    }
+  ]
+}

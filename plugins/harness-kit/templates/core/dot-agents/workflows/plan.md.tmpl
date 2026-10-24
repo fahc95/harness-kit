@@ -1,0 +1,35 @@
+# Workflow: Plan Feature or Change
+
+**Goal**: Plan a feature or non-trivial change with the `planner` persona ({{PERSONA_NAME_PLANNER}}). Returns a numbered plan with exact file paths, impacts and acceptance criteria. **Must be executed before any non-trivial implementation.**
+
+---
+
+## Steps
+
+1. **Read Core Context**:
+   - Read `AGENTS.md` at the root and the nearest nested `AGENTS.md` for the areas the change touches.
+   - Grep `.agents/memory/decisions.md` for the area and read only the matching ADRs, so settled decisions are not re-litigated. Never read the whole log.
+   - Inspect existing files in the touched areas using grep, find, and file view tools.
+
+2. **Formulate the Plan**:
+   Follow the format in `.agents/personas/planner.md`:
+   - Plan title and 1-paragraph summary.
+   - Numbered file-by-file changes with exact paths, what changes, and why.
+<!-- kit:if has.db -->
+   - Explicit schema and migration impact, classified `additive` or `destructive` (or "None").
+<!-- kit:end -->
+   - Tests per behavior, at the right level.
+<!-- kit:if has.ui -->
+   - Explicit copy impact (new or changed user-facing strings, or "None").
+<!-- kit:end -->
+   - Any project-specific sections the planner persona lists.
+   - Acceptance criteria checklist.
+   - Open questions for {{OWNER}}, only when a decision is genuinely theirs.
+
+3. **Present and Await Approval**:
+   - Present the plan clearly to {{OWNER}}.
+   - **Do NOT proceed to implementation without explicit approval.**
+
+4. **Save the Approved Plan**:
+   - Save it at the path named in the plan's `save as` line (`docs/plans/<yyyy-mm>-<slug>.md`) with `**Status:** Approved`, and commit it with the implementation.
+   - When the work merges, update the status line to `Shipped (#PR)`.

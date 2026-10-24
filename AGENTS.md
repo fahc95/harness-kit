@@ -9,7 +9,7 @@ A Claude Code plugin, distributed through the marketplace in this same repo, tha
 ## Hard rules
 
 - **No live components from templates.** Nothing under `plugins/harness-kit/` may sit in a folder Claude Code auto-discovers (`agents/`, `commands/`, `skills/`, `hooks/hooks.json`, `output-styles/`, `bin/`, `.mcp.json`, `.lsp.json`, `settings.json`, or any other default component path in the Claude Code plugin docs) unless it is meant to run in every project where the plugin is enabled. Planned: only `skills/harness-init/`.
-- **Templates are inert.** They live under `plugins/harness-kit/templates/`. Dot folders are spelled `dot-agents/` and `dot-claude/`, and every file has a `.tmpl` suffix, so a session in this repo never loads a template rule, skill or `CLAUDE.md` as a live one, and `node --test` never runs a template test.
+- **Templates are inert.** They live under `plugins/harness-kit/templates/`. Dot folders are spelled `dot-agents/`, `dot-claude/` and so on, and every template file has a `.tmpl` suffix, so a session in this repo never loads a template rule, skill or `CLAUDE.md` as a live one, and `node --test` never runs a template test. The only exceptions are the data files `templates/modules.json` and `templates/vocabulary.json`, which nothing auto-loads. The syntax is in [docs/templates.md](docs/templates.md).
 - **Everything inside the plugin folder.** Installs copy only `plugins/harness-kit/`, so no `../` references and no symlinks out of it.
 - **No project names in templates.** Outside `templates/examples/`, templates carry `{{TOKENS}}`, never a real project's names, URLs or stack.
 - **Production stays out.** No template puts a production-reaching command (ssh to a host, deploys, data-restore or write scripts, MCP servers that reach production) in a guard profile or a tracked `permissions.allow`.
@@ -38,7 +38,7 @@ claude plugin validate --strict plugins/harness-kit
 node --test "plugins/**/*.test.mjs" ".githooks/*.test.mjs"
 ```
 
-Tests live next to the installer scripts and the git hooks. Fixture repos under `test/fixtures/` are inputs, not tests, and may contain failing tests on purpose.
+Tests live next to the installer scripts, the template lint (`plugins/harness-kit/scripts/`) and the git hooks. Fixture repos under `test/fixtures/` are inputs, not tests, and may contain failing tests on purpose.
 
 If a check can't run, report "not run: <reason>", never "passed".
 

@@ -1,0 +1,19 @@
+# Rule: production parity
+
+Read this before you change the container files, deploy configuration, build configuration, a package manifest or the lockfile. (Claude Code loads it through `.claude/rules/production-parity.md`.)
+
+Production is the container image, booted by its entrypoint on the host. Development runs on the developer's machine. These differences can break production while everything passes locally:
+
+| # | Dev to production | Rule |
+|---|---|---|
+| P1 | All dependencies installed, to production-only dependencies | Anything the server or entrypoint runs at runtime is a runtime dependency, not a dev dependency. |
+| P2 | Whole repo, to only the files the image copies | Runtime code reads only copied files. A new runtime file needs a copy step in the image. |
+| P3 | Local env files, to the host's variables | Scripts that run in the container never assume dev-only files or flags. See `env-and-secrets.md`. |
+
+<!-- kit:adapt: Replace or extend P1 to P3 with this project's real dev-to-production differences (bundling, base image and libc, boot steps such as migrations and seeds, which pushes trigger a deploy). Keep one row per difference. -->
+
+## Prove it
+
+- Proof over reasoning: a host build is never evidence (`AGENTS.md` V2).
+- A container smoke test is the evidence: in CI where one exists, otherwise a local container run {{OWNER}} approves. Cite it in the PR.
+- The reviewer checks P1 and P2 on the diff and looks for the smoke evidence.

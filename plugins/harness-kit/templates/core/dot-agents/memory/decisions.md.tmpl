@@ -1,0 +1,19 @@
+# Decisions: {{PROJECT_NAME}}
+
+ADR log. Append-only. Each decision: title, date, status, context, decision, alternatives, consequences. Grep this file for the topic and read only the matching ADRs; never read the whole log.
+
+---
+
+## ADR-001: Adopt harness-kit v{{KIT_VERSION}}
+**Date**: {{DATE}}
+**Status**: Accepted
+
+**Context**: {{PROJECT_NAME}} needed a repeatable way to work with AI agents: planning before code, an independent review of every diff, enforced scope for each agent, and memory that carries from one session to the next.
+
+**Decision**: Install the harness from harness-kit v{{KIT_VERSION}}: `AGENTS.md` as the provider-agnostic source of instructions, personas, rules, workflows and memory under `.agents/`, and a thin Claude Code adapter under `.claude/` with guard hooks. `.agents/harness.json` records the kit version, the installed modules and each file's hashes. The project owns its copy and adapts it.
+
+**Alternatives considered**: writing a harness from scratch (slower, untested); a shared live plugin (can't be adapted per project).
+
+**Consequences**:
+- Easier: every change follows plan, review, implement, review; persona scope is enforced by hooks, not just instructions.
+- Harder: the harness files need the same care as code. Improvements worth sharing go back to the kit on purpose.

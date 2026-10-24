@@ -1,0 +1,215 @@
+# AGENTS.md: {{PROJECT_NAME}}
+
+Read this at the start of every session. It is the authoritative, provider-agnostic source for how we work in this repo. If something here conflicts with what you remember from model training, this file wins.
+
+---
+
+## What this project is
+
+<!-- kit:adapt: Describe the project in 2 to 4 sentences: what it does, who uses it, and what matters most about it. Use the README and the owner's answers; don't invent. -->
+
+## Goals, in priority order
+
+<!-- kit:adapt: List the project's goals as a numbered list, most important first. Ask the owner if the README doesn't make them clear. -->
+
+When goals conflict, prefer earlier in this list.
+
+## Stack and version pins
+
+<!-- kit:adapt: List the runtime, package manager, framework, language, lint, test and database tooling with their pinned versions, from the manifests and lockfiles. One bullet each. -->
+
+## Repo layout
+
+```
+.agents/              # Agentic harness, provider-agnostic: personas, rules, workflows, memory
+├── personas/         # Role definitions: architect, planner, reviewer, retro, researcher
+├── rules/            # Cross-cutting rules (source)
+├── workflows/        # Playbooks: plan, review, feature, retro
+└── memory/           # Decisions (ADRs), lessons (retros), learning log
+.claude/              # Claude Code adapter: sub-agents, slash commands, rules, settings and hooks wrapping .agents/
+AGENTS.md             # Universal agent instructions (this file)
+CLAUDE.md             # Claude Code entry point (imports this file)
+```
+
+<!-- kit:if module.prePush -->
+`.githooks/` holds the checked-in git hooks (pre-push refuses `main`).
+<!-- kit:end -->
+
+<!-- kit:adapt: Add the project's own top-level folders to the tree above, one line each with a short comment, and name any nested AGENTS.md files. -->
+
+Read the nearest `AGENTS.md` to whatever you are editing.
+
+## Documentation layout
+
+- **`.agents/` is how we work** (the harness); **`docs/` is what we build** (the product).
+- Approved plans go in `docs/plans/<yyyy-mm>-<slug>.md`. Set the plan's `**Status:**` line to `Shipped (#PR)` when it merges.
+- `docs/next-steps.md` is the session handoff: overwrite it at the end of each slice.
+- **Living docs vs records.** Living docs (`AGENTS.md`, `README.md`, `docs/next-steps.md`) must match the present. Records (shipped plans, `.agents/memory/*`) are never rewritten; the only allowed edits are status lines and link paths after a move.
+- Move files with `git mv`, in a commit with no content edits, so history follows the file.
+
+## How we work: the plan, review, implement, review loop
+
+For any change larger than a typo or a one-line config tweak:
+
+1. **Plan first.** Run the `planner` persona (or `.agents/workflows/plan.md`) with a one-line goal. It returns a numbered plan with file paths and acceptance criteria. No code yet.
+2. **{{OWNER}} reviews the plan.** Approves, edits, or rejects.
+<!-- kit:if has.checks -->
+3. **Implement.** Implement the approved plan step by step. Run `{{CMD_CHECKS}}` before declaring done. A check that can't run is reported "not run: <reason>", never "passed".
+<!-- kit:end -->
+<!-- kit:if !has.checks -->
+3. **Implement.** Implement the approved plan step by step. The project has no typecheck, lint or test command yet: report each check as "not run: no command".
+<!-- kit:end -->
+<!-- kit:if has.container -->
+   If the diff touches the container image or boot path (`.agents/rules/production-parity.md`), a container run is the evidence. A host build is never evidence that production works.
+<!-- kit:end -->
+4. **Review the diff.** Run the `reviewer` persona (or `.agents/workflows/review.md`). Independent context, fresh read. The reviewer audits against conventions and drift checks, and may approve or request changes.
+5. **{{OWNER}} validates** the change where it runs, when relevant.
+<!-- kit:if module.openPr -->
+6. **Always ask {{OWNER}} before merging to `main`.** When {{OWNER}} asks for a PR, open it with `open-pr`. Never merge a branch or PR autonomously. Present the diff summary and green checks, and ask for explicit approval.
+<!-- kit:end -->
+<!-- kit:if !module.openPr -->
+6. **Always ask {{OWNER}} before merging to `main`.** Never merge a branch or PR autonomously. Present the diff summary and green checks, and ask for explicit approval.
+<!-- kit:end -->
+7. **Memorialize.** At session end, follow `.agents/workflows/retro.md`: brief the `retro` persona, which appends to `.agents/memory/lessons.md` and refreshes `docs/next-steps.md`; decisions it flags go to the `architect` as proposed ADRs.
+
+The reviewer pass is non-negotiable. It is the cheapest insurance against confidently wrong code.
+
+## Git & PRs
+
+GitHub flow: `main` is production, and every change reaches it through a PR.
+
+<!-- kit:adapt: Say in one sentence how main reaches production (which host or workflow deploys it, and after which checks). If nothing deploys automatically, say so. -->
+
+- **The main checkout stays on `main`; branch work happens in a worktree.** Claude Code worktree sessions load agents, hooks and settings from the main checkout, so a feature branch left checked out there hands every new session stale harness files. Start each task in a worktree off an up-to-date `main`, and never switch the main checkout's branch.
+- **Pull `main` at session start**: fast-forward the main checkout (`git -C <main checkout> pull --ff-only`) before branching.
+- Branch from `main` as `{{BRANCH_PREFIX}}/<type>-<slug>`: a Conventional Commit type plus 2 to 5 kebab-case words. Stacked PRs target the branch below; restack when it changes and retarget to `main` once it merges. After the branch below is squash-merged, `git fetch` and restack with `git rebase --onto origin/main <old base SHA>`, where the old base SHA is the last commit of the branch below before the squash.
+- Commits and PR titles are Conventional Commits. The PR title becomes the squash commit.
+<!-- kit:if module.openPr -->
+- Open PRs with the `open-pr` skill: sections in `.github/pull_request_template.md` order, a `Rollback:` line in Notes when a risky path changes, no em dashes, no "Generated with Claude Code" footer and no co-author line.
+<!-- kit:end -->
+- Squash merge and delete the branch, only with green checks and {{OWNER}}'s explicit approval.
+<!-- kit:if module.prePush -->
+- Never push to `main`. `.githooks/pre-push` refuses it once you run `git config core.hooksPath .githooks` (one time per clone; worktrees share it). Only {{OWNER}} uses the `{{ENV_PREFIX}}_ALLOW_PUSH_MAIN=1` override. Never use `--no-verify`.
+<!-- kit:end -->
+<!-- kit:if !module.prePush -->
+- Never push to `main`.
+<!-- kit:end -->
+- Force-push only your own branch, and only with `--force-with-lease`.
+
+Rollback paths:
+
+<!-- kit:adapt: List how to roll back each kind of change in this project (a bad deploy, a bad migration, a bad config change). If a path doesn't exist yet, say so. -->
+
+## Where to build and verify
+
+- **V1** Every environment an agent works in can run the checks. If a check can't run, report "not run: <reason>", never "passed".
+<!-- kit:if has.container -->
+- **V2** Production parity is proven only in the container: a container smoke test in CI where one exists, or a local container run {{OWNER}} approves. A host build is not evidence that production works.
+<!-- kit:end -->
+- **V3** LF line endings everywhere (`.gitattributes`).
+
+<!-- kit:adapt: Add any environment notes as V4 (supported operating systems, where the repo must live, dev containers). Delete this marker if there are none. -->
+
+## The team (`.agents/personas/`)
+
+IDs are role-based and are what files, hooks and workflows reference; names are what we call them. Personas run as sub-agents with a fresh context, so brief them fully; their final message is all the caller gets.
+
+| ID | Name | Job | Can | Model |
+|---|---|---|---|---|
+| (main session) | **{{PERSONA_NAME_BUILDER}}** | Builder: implements approved plans, orchestrates the others, talks with {{OWNER}} | Everything the session allows | session model |
+<!-- kit:if has.db -->
+| `architect` | **{{PERSONA_NAME_ARCHITECT}}** | Shape of the system: decisions and ADRs, schema and migrations, architecture assessments | Edit `{{DB_PATH}}` and `decisions.md`; local DB Bash | Opus |
+<!-- kit:end -->
+<!-- kit:if !has.db -->
+| `architect` | **{{PERSONA_NAME_ARCHITECT}}** | Shape of the system: decisions and ADRs, architecture assessments | Edit `decisions.md` | Opus |
+<!-- kit:end -->
+| `planner` | **{{PERSONA_NAME_PLANNER}}** | Step-by-step implementation plans | Read only | Opus |
+| `reviewer` | **{{PERSONA_NAME_REVIEWER}}** | Reviews every diff before merge | Read only + git and check Bash | Opus |
+| `retro` | **{{PERSONA_NAME_RETRO}}** | End-of-session lesson and handoff | Edit `lessons.md` and `next-steps.md` | Sonnet |
+| `researcher` | **{{PERSONA_NAME_RESEARCHER}}** | Researches a topic in its official docs and returns verified facts with URLs | Read only + web search and fetch | Sonnet |
+
+Cost controls: in their Claude wrappers the planner, reviewer and architect run at `effort: medium`, every Opus persona has a `maxTurns` cap, and `.agents/workflows/review.md` sizes each review to the risk of the diff. Raise a persona's effort for a single hard run through the Agent call, not by editing the wrapper.
+
+When to run each:
+
+- **`architect`** (`.agents/personas/architect.md`): architectural decisions and ADRs (boundaries, auth, deploy topology, environment design, new dependencies); architectural assessment of a plan or area. Run it before the planner when a change needs a decision no accepted ADR covers.
+<!-- kit:if has.db -->
+  It also owns every schema change under `{{DB_PATH}}` (migration, seed update, rollback note).
+<!-- kit:end -->
+- **`planner`** (`.agents/personas/planner.md`): any change involving more than one file, or any new feature. Always before code.
+- **`reviewer`** (`.agents/personas/reviewer.md`): any diff before merging, even self-PRs.
+- **`retro`** (`.agents/personas/retro.md`): at end of session or slice, given a brief of what happened. Flags decisions for the `architect` to record as ADRs.
+- **`researcher`** (`.agents/personas/researcher.md`): before adopting a dependency or relying on an external tool's behavior. Brief it with the topic, the versions this repo pins, and the questions to answer; it returns facts with official-doc URLs.
+
+## Project rules
+
+<!-- kit:adapt: Write the project's code conventions and stack-specific rules as short sections (naming, exports, error handling, framework idioms to avoid). Fold in any rules from the project's existing instructions. Keep each rule one line. -->
+
+<!-- kit:if has.db -->
+## Data layer rules
+
+- Every schema change under `{{DB_PATH}}` goes through the `architect` persona.
+- Every migration has a written rollback note in the PR description.
+- Never edit a committed migration; add a follow-up migration instead.
+- Before a PR with a destructive migration merges, {{OWNER}} takes a backup of the production database. The destructive rollback path restores it.
+
+<!-- kit:adapt: Say how the production backup is taken (the command or console steps {{OWNER}} runs) and where restore steps live. If there is no backup procedure yet, say so and add it to docs/next-steps.md as an open item. -->
+<!-- kit:end -->
+
+## Definition of Done
+
+For any change to be considered done:
+
+- [ ] Plan was reviewed before implementation
+<!-- kit:if has.typecheck -->
+- [ ] `{{CMD_TYPECHECK}}` passes
+<!-- kit:end -->
+<!-- kit:if has.lint -->
+- [ ] `{{CMD_LINT}}` passes
+<!-- kit:end -->
+<!-- kit:if has.test -->
+- [ ] `{{CMD_TEST}}` passes
+<!-- kit:end -->
+- [ ] Reviewer agent ran and approved
+<!-- kit:if has.ui -->
+- [ ] If user-facing: validated where users see it
+<!-- kit:end -->
+<!-- kit:if has.db -->
+- [ ] If schema change: migration + seed update + rollback note
+<!-- kit:end -->
+<!-- kit:if has.container -->
+- [ ] If the image or boot path changed (`.agents/rules/production-parity.md`): a container run passed, cited in the PR
+<!-- kit:end -->
+- [ ] Explicit approval from {{OWNER}} before merging to `main`
+- [ ] Lessons logged to `.agents/memory/lessons.md` (and decisions to `.agents/memory/decisions.md` if applicable)
+
+## The do-not list
+
+- **No** pushes to `main`. Every change reaches it through a PR.
+- **No** reading `.env` files, and no secrets in the repo, PRs, issues or logs (`.agents/rules/env-and-secrets.md`). Scripts that need a credential read it themselves.
+- **No** production-reaching commands (ssh to a server, deploys, data scripts that write to production) unless {{OWNER}} asks for that exact command.
+- **No** skipping the reviewer pass.
+- **No** new dependencies without a one-line justification recorded as an ADR by the `architect`.
+- **No** "I'll fix it later." If it's worth doing, capture it as a TODO in code with a date and an owner.
+
+<!-- kit:adapt: Add the stack-specific do-not lines from the project's existing instructions (for example, banned APIs or patterns). Delete this marker if there are none. -->
+
+## Memory
+
+- `.agents/memory/decisions.md`: append-only ADR log of meaningful technical decisions. Grep it for the topic and read only the matching ADRs, so settled questions aren't re-litigated; never read the whole log.
+- `.agents/memory/lessons.md`: append-only retro log. One paragraph per session. Compounds over time.
+- `.agents/memory/learning-log.md`: append-only study log: topic, verified facts with sources, follow-ups.
+
+When in doubt about a past decision, grep `decisions.md` first.
+
+## Rules
+
+Cross-cutting rules live in `.agents/rules/`. Claude Code loads each file-scoped one through a thin `.claude/rules/<topic>.md` adapter when a matching file is read or edited; other agents read the source before working on those paths.
+
+- `commands.md`: commands the agent may run without asking.
+- `env-and-secrets.md`: environment variables and secrets.
+<!-- kit:if has.container -->
+- `production-parity.md`: the differences between development and the production container.
+<!-- kit:end -->
+
+<!-- kit:adapt: List any project-specific rules files added under .agents/rules/, one line each with the paths they cover. Delete this marker if there are none. -->

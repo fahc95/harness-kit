@@ -1,0 +1,19 @@
+# Workflow: Session Retro
+
+**Goal**: At the end of a session or slice, capture what we learned in `.agents/memory/lessons.md`, refresh the `docs/next-steps.md` handoff, and send new decisions to the architect for an ADR.
+
+---
+
+## Steps
+
+1. **Write the brief** (the main session; the retro persona never saw the session):
+   - **Attempted:** the goal and what got done (PR numbers).
+   - **Surprises:** what broke, what was harder or different than expected, and why.
+   - **Decided:** choices that will constrain future work.
+   - **Open:** what is unfinished, blocked, or next.
+
+2. **Run the `retro` persona ({{PERSONA_NAME_RETRO}})** with the brief. It confirms against git, appends one lesson (at most 150 words, ending with "Next time:"), and updates `docs/next-steps.md`.
+
+3. **Promote decisions:** for each decision {{PERSONA_NAME_RETRO}} flags, run the `architect` persona ({{PERSONA_NAME_ARCHITECT}}) in Decide mode to append the ADR as `Proposed`.
+
+4. **Summarize:** show {{OWNER}} the lesson, the handoff changes, and any proposed ADRs. {{OWNER}} accepts or edits the ADRs; commit the memory changes with the session's last PR or as their own small PR.
