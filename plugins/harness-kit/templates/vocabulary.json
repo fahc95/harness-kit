@@ -28,11 +28,11 @@
     }
   },
   "rejectCommandPatterns": {
-    "description": "A value is rejected at render time if any command in it (a command token, an item of VERIFY_COMMANDS_JSON or DB_COMMANDS_JSON, or the command inside a Bash(...) rule) matches one of these. The first group is a production backstop (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts); it is not the classifier, so a match means: ask the owner, never allow. The second group is what bash-guard blocks anyway (inline env assignments, git --output), so such an entry could never run.",
+    "description": "A value is rejected at render time if any command in it (a command token, an item of VERIFY_COMMANDS_JSON or DB_COMMANDS_JSON, or the command inside a Bash(...) rule) matches one of these. The first group is a production backstop (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts); it is not the classifier, so a match means: ask the owner, never allow. The second group is what bash-guard blocks anyway (inline env assignments, git --output), so such an entry could never run. The first-word patterns also match behind one runner word (for example `npx <tool>` or `<runner> exec <tool>`); deeper wrappers such as `bash -c` are not unwrapped, which the command type's no-quotes rule already blocks.",
     "patterns": [
-      "^(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\\b",
-      "^(gh|git push|docker push|docker login)\\b",
-      "^(fly|flyctl|vercel|netlify|heroku|railway|firebase|wrangler|supabase|aws|gcloud|az)\\b",
+      "^(\\S+ (exec |dlx )?)?(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\\b",
+      "^(\\S+ (exec |dlx )?)?(gh|git push|docker push|docker login)\\b",
+      "^(\\S+ (exec |dlx )?)?(fly|flyctl|vercel|netlify|heroku|railway|firebase|wrangler|supabase|aws|gcloud|az)\\b",
       "(^|[\\s:])(deploy|release|publish|push)(:[\\w-]+)?(\\s|$)",
       "(^|[\\s:-])remote\\b",
       "://",

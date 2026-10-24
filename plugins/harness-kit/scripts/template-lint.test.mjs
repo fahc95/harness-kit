@@ -191,6 +191,8 @@ describe("vocabulary", () => {
       "npx wrangler d1 execute app --remote",
       "supabase db push",
       "pulumi up",
+      "npx wrangler d1 execute app",
+      "npm exec aws s3 ls",
       "npm run deploy:staging",
       "npm run seed:prod",
       "NODE_ENV=test npm test",
@@ -365,6 +367,8 @@ describe("modules.json", () => {
 // Render the core hooks and settings with the vocabulary examples into a temp repo, then run
 // the rendered guard tests there: a template that renders but doesn't work fails here.
 describe("rendered core hooks", () => {
+  // Guards against a rendered suite that silently registers nothing (it runs about 100 cases).
+  const MIN_GUARD_TESTS = 60;
   const renderInto = (root, values, flags) => {
     for (const f of templates.filter((t) => t.startsWith("core/dot-claude/hooks/"))) {
       const target = path.join(root, deriveTarget(f));
@@ -395,8 +399,7 @@ describe("rendered core hooks", () => {
         });
         assert.equal(run.status, 0, run.stdout.split("\n").filter((l) => /^not ok|error/.test(l.trim())).join("\n"));
         assert.match(run.stdout, /# fail 0/);
-        // Guard against a suite that silently registers nothing: the reference has ~100 cases.
-        assert.ok(Number(run.stdout.match(/# pass (\d+)/)?.[1]) >= 60, "too few guard tests ran");
+        assert.ok(Number(run.stdout.match(/# pass (\d+)/)?.[1]) >= MIN_GUARD_TESTS, "too few guard tests ran");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }

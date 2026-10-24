@@ -60,9 +60,9 @@ const BYPASSES = [
 // A backstop, not the classifier: no allowlisted command may look like it reaches production.
 // Mirrors harness-kit's render-time check; keep it when you edit the profiles.
 const PRODUCTION = [
-  /^(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\b/,
-  /^(gh|git push|docker push|docker login)\b/,
-  /^(fly|flyctl|vercel|netlify|heroku|firebase|wrangler|supabase|aws|gcloud|az)\b/,
+  /^(\S+ (exec |dlx )?)?(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\b/,
+  /^(\S+ (exec |dlx )?)?(gh|git push|docker push|docker login)\b/,
+  /^(\S+ (exec |dlx )?)?(fly|flyctl|vercel|netlify|heroku|firebase|wrangler|supabase|aws|gcloud|az)\b/,
   /(^|[\s:])(deploy|release|publish|push)(:[\w-]+)?(\s|$)/,
   /(^|[\s:-])remote\b/,
   /:\/\//,
