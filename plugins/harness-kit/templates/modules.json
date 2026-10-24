@@ -6,7 +6,7 @@
       "id": "core",
       "tier": "core",
       "title": "Core harness",
-      "offer": "AGENTS.md and CLAUDE.md, the architect, planner, reviewer, retro and researcher personas, the plan, review, feature and retro workflows, rules, and memory seeds.",
+      "offer": "AGENTS.md and CLAUDE.md, the architect, planner, reviewer, retro and researcher personas with their Claude Code sub-agents and guard hooks, the plan, review, feature and retro workflows, rules, memory seeds, and the .env deny list and allow list for .claude/settings.json.",
       "default": true,
       "requires": [],
       "when": null,
@@ -113,6 +113,37 @@
           "adapt": true
         },
         {
+          "template": "core/dot-claude/HOOKS-GUIDE.md.tmpl",
+          "target": ".claude/HOOKS-GUIDE.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-claude/agents/architect.md.tmpl",
+          "target": ".claude/agents/architect.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/agents/planner.md.tmpl",
+          "target": ".claude/agents/planner.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/agents/researcher.md.tmpl",
+          "target": ".claude/agents/researcher.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/agents/retro.md.tmpl",
+          "target": ".claude/agents/retro.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/agents/reviewer.md.tmpl",
+          "target": ".claude/agents/reviewer.md",
+          "onExisting": "kit-new"
+        },
+        {
           "template": "core/dot-claude/commands/feature.md.tmpl",
           "target": ".claude/commands/feature.md",
           "onExisting": "kit-new"
@@ -133,6 +164,31 @@
           "onExisting": "kit-new"
         },
         {
+          "template": "core/dot-claude/hooks/bash-guard.mjs.tmpl",
+          "target": ".claude/hooks/bash-guard.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/hooks/guard-profiles.mjs.tmpl",
+          "target": ".claude/hooks/guard-profiles.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/hooks/guards.test.mjs.tmpl",
+          "target": ".claude/hooks/guards.test.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/hooks/path-guard.mjs.tmpl",
+          "target": ".claude/hooks/path-guard.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "core/dot-claude/hooks/repo-root.mjs.tmpl",
+          "target": ".claude/hooks/repo-root.mjs",
+          "onExisting": "kit-new"
+        },
+        {
           "template": "core/dot-claude/rules/env-and-secrets.md.tmpl",
           "target": ".claude/rules/env-and-secrets.md",
           "onExisting": "kit-new",
@@ -146,7 +202,9 @@
           "adapt": true
         }
       ],
-      "settings": [],
+      "settings": [
+        "core/settings.fragment.json.tmpl"
+      ],
       "postInstall": []
     }
   ]

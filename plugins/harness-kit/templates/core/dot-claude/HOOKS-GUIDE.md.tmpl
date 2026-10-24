@@ -1,0 +1,57 @@
+# Hooks reference
+
+What runs automatically in this repo, where it is wired, and how it is tested. Claude Code hook docs: https://docs.claude.com/en/docs/claude-code/hooks
+
+## How hooks work here
+
+- A hook is a command that fires on an event (`PreToolUse`, `PostToolUse`, `Stop`, `SessionStart`, ...). Each entry has a `matcher` (a regex over the tool name) and a command. The payload arrives on stdin as JSON and includes the session's `cwd`.
+- `PreToolUse` hooks can block: exit 2 blocks the call and feeds stderr back to Claude. Exit 1 does not block, so every guard exits 2 on any failure.
+- **Fail closed.** The guards block on a bad payload, an unknown profile, a broken profile file or a crash.
+- **Worktrees.** In a worktree session, settings, agents, commands and hook scripts load from the main checkout, and `$CLAUDE_PROJECT_DIR` points there. Hooks that resolve file paths use the payload `cwd` (the worktree) through `.claude/hooks/repo-root.mjs`. A guard change made on a branch is live only after it merges and main is pulled, which is why the main checkout stays on `main` (`AGENTS.md` "Git & PRs").
+- Persona guards run only when that persona runs as a sub-agent. Slash commands and the main session use the session's own permissions.
+
+## Session hooks (`.claude/settings.json`)
+
+| Event | Matcher | Command | What it does |
+|---|---|---|---|
+| `Stop` | (all) | `echo` | Reminds you to consider `/retro`. |
+
+The same file holds `permissions.deny` for Read and Edit on `.env` files at any depth (E5, `.agents/rules/env-and-secrets.md`) and the `permissions.allow` list described in `.agents/rules/commands.md`.
+
+## Persona guards (`.claude/agents/*.md` frontmatter)
+
+| Guard | Used by | What it allows |
+|---|---|---|
+| `bash-guard.mjs read-only` | reviewer, retro | Git inspection (`status`, `diff`, `log`, `show`, `ls-files`, `merge-base`, `rev-parse`, `branch --show-current`) and the exact check commands |
+<!-- kit:if has.db -->
+| `bash-guard.mjs architect` | architect | The read-only commands, plus the exact local-database commands |
+| `path-guard.mjs <paths>` | architect (`{{DB_PATH}}`, `.agents/memory/decisions.md`), retro (`.agents/memory/lessons.md`, `docs/next-steps.md`) | Edit and Write (retro has only Edit) only inside the listed paths, resolved against the session's checkout |
+<!-- kit:end -->
+<!-- kit:if !has.db -->
+| `bash-guard.mjs architect` | architect | The read-only commands |
+| `path-guard.mjs <paths>` | architect (`.agents/memory/decisions.md`), retro (`.agents/memory/lessons.md`, `docs/next-steps.md`) | Edit and Write (retro has only Edit) only inside the listed paths, resolved against the session's checkout |
+<!-- kit:end -->
+
+The profiles live in `.claude/hooks/guard-profiles.mjs`, which is the source of truth; this table is a summary. harness-kit generated them from this repo's commands; edit that file to change them. Commands match exactly, so `<test command> some-file` is blocked unless that exact line is listed. Every profile also rejects shell metacharacters (separators, pipes, redirects, quotes, `$`, backslashes), inline env assignments and git's `--output`; only `&&` chaining is allowed. The planner and researcher have no Bash tool at all.
+<!-- kit:if module.prePush -->
+
+## Git hook (`.githooks/pre-push`)
+
+Refuses pushes to `main`. Arm it once per clone with `git config core.hooksPath .githooks` (worktrees share it). Only {{OWNER}} uses the `{{ENV_PREFIX}}_ALLOW_PUSH_MAIN=1` override, and nobody uses `--no-verify`.
+<!-- kit:end -->
+
+## Tests
+
+`{{CMD_HOOK_TESTS}}` runs the hook tests (`.claude/hooks/guards.test.mjs` and any skill-script or git-hook tests). Run it after any guard, hook or skill-script change. The bash-guard cases are derived from `guard-profiles.mjs`; add a case to `guards.test.mjs` for any pattern you write by hand.
+
+## Adding a hook
+
+- Add one only after skipping the manual step has bitten us at least once. Hooks should make the right thing the easy thing.
+- Keep hooks fast, because they run on every matching tool call, and never auto-run tests on every edit.
+- A new guard fails closed and gets tests in the same PR.
+
+<!-- kit:adapt: List 1 to 3 hook candidates that fit this project (for example a SessionStart warning when the main checkout isn't on main, or a formatter after edits), each one line, under "Candidates, not added yet:". Delete this marker if there are none. -->
+
+## When stuck
+
+`claude --debug` shows hook output and errors. The settings schema is at https://docs.claude.com/en/docs/claude-code/settings.

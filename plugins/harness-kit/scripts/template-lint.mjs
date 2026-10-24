@@ -150,7 +150,8 @@ export function miniRender(text, { style, values, flags }) {
 
 /**
  * Problems in a rendered file's YAML frontmatter, if it has one: it must close, and each
- * line must be "key: value", "key:" or a "  - item" list entry, with no HTML comment.
+ * line must be a block-style "key: value", "key:" or "- item" (nested by even indentation),
+ * with no HTML comment and no unquoted ": " inside a value.
  */
 export function frontmatterErrors(text) {
   if (!text.startsWith("---\n")) return [];
@@ -161,10 +162,15 @@ export function frontmatterErrors(text) {
   lines.slice(1, close).forEach((line, i) => {
     const n = i + 2;
     if (line.includes("<!--")) errors.push(`line ${n}: HTML comment in frontmatter`);
-    else if (!/^[A-Za-z_][\w-]*:( \S.*)?$/.test(line) && !/^ {2}- \S/.test(line)) {
-      errors.push(`line ${n}: not a "key: value" or "  - item" line`);
-    } else if (/^[\w-]+: .*: /.test(line) && !/^[\w-]+: ["']/.test(line)) {
-      errors.push(`line ${n}: unquoted ": " in a value`);
+    else {
+      const m = line.match(/^((?: {2})*)(- )?(.*)$/);
+      const body = m[3];
+      const keyValue = body.match(/^[A-Za-z_][\w-]*:( (\S.*))?$/);
+      if (!keyValue && !(m[2] && /^\S/.test(body))) {
+        errors.push(`line ${n}: not a "key: value" or "- item" line with even indentation`);
+      } else if (keyValue?.[2] && /: /.test(keyValue[2]) && !/^["']/.test(keyValue[2])) {
+        errors.push(`line ${n}: unquoted ": " in a value`);
+      }
     }
   });
   return errors;
@@ -172,7 +178,10 @@ export function frontmatterErrors(text) {
 
 /** Does a value match its vocabulary entry (type pattern, then the entry's own pattern)? */
 export function valueMatches(entry, types, value) {
-  if (entry.type === "json-array") return Array.isArray(value);
+  if (entry.type === "json-array") {
+    const item = entry.itemPattern && new RegExp(entry.itemPattern, "u");
+    return Array.isArray(value) && value.every((v) => typeof v === "string" && (!item || item.test(v)));
+  }
   if (typeof value !== "string") return false;
   const patterns = [types[entry.type]?.pattern, entry.pattern].filter(Boolean);
   return patterns.every((p) => new RegExp(p, "u").test(value));

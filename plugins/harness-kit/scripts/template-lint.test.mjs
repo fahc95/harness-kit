@@ -2,7 +2,9 @@
 // docs/templates.md in the kit repo) and the registry (templates/modules.json).
 // CI runs it with node --test. Template files end in .tmpl, so they never run here.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -157,6 +159,16 @@ describe("vocabulary", () => {
     }
     assert.equal(ok("DB_PATH", "packages/db/"), true);
     assert.equal(ok("OWNER", "a|b"), false);
+  });
+
+  test("json-array tokens are named NAME_JSON and declare an item pattern", () => {
+    for (const [name, entry] of Object.entries(vocabulary.tokens)) {
+      if (entry.type !== "json-array") continue;
+      assert.match(name, /_JSON$/, name);
+      assert.ok(entry.itemPattern, `${name}: itemPattern`);
+    }
+    assert.equal(valueMatches(vocabulary.tokens.VERIFY_COMMANDS_JSON, vocabulary.types, ["npm test; rm x"]), false);
+    assert.equal(valueMatches(vocabulary.tokens.ALLOW_RULES_JSON, vocabulary.types, ["Bash(ssh host $X)"]), false);
   });
 
   test("flag names follow the grammar", () => {
@@ -316,5 +328,52 @@ describe("modules.json", () => {
       }
     }
     for (const t of templates) assert.equal(counts.get(t), 1, `${t}: listed ${counts.get(t) ?? 0} times`);
+  });
+});
+
+// Render the core hooks and settings with the vocabulary examples into a temp repo, then run
+// the rendered guard tests there: a template that renders but doesn't work fails here.
+describe("rendered core hooks", () => {
+  const renderInto = (root, flags) => {
+    for (const f of templates.filter((t) => t.startsWith("core/dot-claude/hooks/"))) {
+      const target = path.join(root, deriveTarget(f));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, miniRender(read(f), { style: "slash", values: examples, flags }));
+    }
+  };
+
+  for (const db of [true, false]) {
+    test(`guards.test passes with has.db ${db}`, () => {
+      const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "kit-hooks-"));
+      try {
+        renderInto(root, { ...allFlags(true), "has.db": db });
+        const hooks = path.join(root, ".claude/hooks");
+        for (const f of fs.readdirSync(hooks)) {
+          const check = spawnSync(process.execPath, ["--check", path.join(hooks, f)], { encoding: "utf8" });
+          assert.equal(check.status, 0, `${f}: ${check.stderr}`);
+        }
+        // A child `node --test` must not inherit this runner's context, or it reports to us.
+        const { NODE_TEST_CONTEXT: _drop, ...env } = process.env;
+        const run = spawnSync(process.execPath, ["--test", path.join(hooks, "guards.test.mjs")], {
+          encoding: "utf8",
+          env,
+        });
+        assert.equal(run.status, 0, run.stdout.split("\n").filter((l) => /^not ok|error/.test(l.trim())).join("\n"));
+        assert.match(run.stdout, /# fail 0/);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("the settings fragment renders to JSON with the .env deny list and the allow list", () => {
+    const text = read("core/settings.fragment.json.tmpl");
+    const settings = JSON.parse(miniRender(text, { style: "none", values: examples, flags: allFlags(true) }));
+    assert.deepEqual(settings.permissions.allow, examples.ALLOW_RULES_JSON);
+    assert.equal(settings.permissions.deny.length, 44);
+    for (const verb of ["Read", "Edit"]) {
+      assert.ok(settings.permissions.deny.includes(`${verb}(**/.env)`));
+      assert.ok(settings.permissions.deny.includes(`${verb}(//**/.env)`));
+    }
   });
 });

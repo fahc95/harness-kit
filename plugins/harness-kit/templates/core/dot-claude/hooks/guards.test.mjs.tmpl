@@ -1,0 +1,296 @@
+// Regression tests for the persona guard hooks. Run with `node --test ".claude/hooks/*.test.mjs"`.
+// Each case feeds a hook the JSON payload Claude Code sends and checks the exit code:
+// 0 = allowed, 2 = blocked. The bash-guard cases come from guard-profiles.mjs, so a profile
+// change is tested without editing this file; add a case here for any hand-written pattern.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { after, before, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { DB_COMMANDS, exact, VERIFY_COMMANDS } from "./guard-profiles.mjs";
+
+const HOOKS_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_DIR = path.resolve(HOOKS_DIR, "../..");
+const ALLOWED = 0;
+const BLOCKED = 2;
+
+const runHook = (script, args, payload, projectDir = PROJECT_DIR) => {
+  const { status, stdout } = spawnSync("node", [path.join(HOOKS_DIR, script), ...args], {
+    input: payload,
+    encoding: "utf8",
+    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
+  });
+  return { status, stdout };
+};
+
+const expectExit = (script, args, payload, expected) => {
+  const { status } = runHook(script, args, payload);
+  if (status !== expected) {
+    throw new Error(`expected exit ${expected}, got ${status} for ${payload}`);
+  }
+};
+
+const bash = (profile, command, expected) =>
+  test(`[${profile}] ${expected === ALLOWED ? "allows" : "blocks"} ${command}`, () =>
+    expectExit("bash-guard.mjs", [profile], JSON.stringify({ tool_input: { command } }), expected));
+
+// Shell bypasses that every profile must block, whatever its allowlist (found in reviews).
+const BYPASSES = [
+  "git diff --ou=/tmp/x",
+  'git diff --out""put=/tmp/x',
+  "git diff --out${x}put=/tmp/x",
+  "git diff --output=/tmp/x",
+  "git status 2>&1/tmp/x",
+  "git status 2>&1foo",
+  "git log --output /tmp/x",
+  "git diff '--output=x'",
+  "git diff --out\\put=x",
+  "git push",
+  "git status; rm x",
+  "git log | head",
+  "rm -rf .",
+  "cd src && git diff",
+  "git status & rm x",
+  "X=1 git status",
+  "git status\nrm x",
+];
+
+// A backstop, not the classifier: no allowlisted command may look like it reaches production.
+const PRODUCTION = [
+  /^(ssh|scp|rsync|sftp|kubectl|helm|terraform|ansible|curl|wget)\b/,
+  /^(gh|git push|docker push|docker login)\b/,
+  /^(fly|flyctl|vercel|netlify|heroku|firebase|aws|gcloud|az)\b/,
+  /(^|\s)(deploy|release|publish)(:[\w-]+)?(\s|$)/,
+  /prod/i,
+];
+
+describe("guard-profiles", () => {
+  test("no allowlisted command looks production-reaching", () => {
+    for (const c of [...VERIFY_COMMANDS, ...DB_COMMANDS]) {
+      for (const re of PRODUCTION) assert.doesNotMatch(c, re);
+    }
+  });
+  test("exact() rejects shell metacharacters and non-strings", () => {
+    for (const bad of ["a; b", "a | b", "a && b", "a > f", "$X", "a  b", "", 42]) {
+      assert.throws(() => exact([bad]), /bad command/);
+    }
+  });
+});
+
+describe("bash-guard read-only", () => {
+  for (const command of [
+    "git status",
+    "git diff origin/main...HEAD",
+    "git log --oneline origin/main..HEAD",
+    "git show origin/main:AGENTS.md",
+    "git branch --show-current",
+    ...VERIFY_COMMANDS,
+  ]) {
+    bash("read-only", command, ALLOWED);
+  }
+  if (VERIFY_COMMANDS.length) {
+    bash("read-only", VERIFY_COMMANDS.join(" && "), ALLOWED);
+    bash("read-only", `${VERIFY_COMMANDS[0]} 2>&1`, ALLOWED);
+    bash("read-only", `${VERIFY_COMMANDS[0]} --extra`, BLOCKED); // exact match only
+  }
+  for (const command of [...BYPASSES, ...DB_COMMANDS]) {
+    bash("read-only", command, BLOCKED);
+  }
+});
+
+describe("bash-guard architect", () => {
+  for (const command of ["git status", ...VERIFY_COMMANDS, ...DB_COMMANDS]) {
+    bash("architect", command, ALLOWED);
+  }
+  if (DB_COMMANDS.length) {
+    bash("architect", `${DB_COMMANDS[0]} --extra`, BLOCKED);
+    bash("architect", `X=1 ${DB_COMMANDS[0]}`, BLOCKED);
+  }
+  for (const command of BYPASSES) {
+    bash("architect", command, BLOCKED);
+  }
+});
+
+describe("bash-guard profiles", () => {
+  bash("nope", "git status", BLOCKED);
+  bash("__proto__", "git status", BLOCKED);
+});
+
+// A copy of a hook in a temp dir, with or without a stand-in for its helper module.
+const isolated = (script, helper, helperSource) => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "guard-alone-"));
+  fs.copyFileSync(path.join(HOOKS_DIR, script), path.join(dir, script));
+  if (helper) fs.writeFileSync(path.join(dir, helper), helperSource);
+  return dir;
+};
+
+describe("guards fail closed on bad payloads", () => {
+  for (const [script, args] of [
+    ["bash-guard.mjs", ["read-only"]],
+    ["path-guard.mjs", ["src/data"]],
+  ]) {
+    for (const payload of [
+      "",
+      "not json",
+      '{"tool_input":{}}',
+      "null",
+      "[]",
+      '{"tool_input":"x"}',
+    ]) {
+      test(`${script} blocks ${JSON.stringify(payload)}`, () =>
+        expectExit(script, args, payload, BLOCKED));
+    }
+  }
+  // Why the hooks import their helpers dynamically: a missing or broken helper must still block (exit 2).
+  for (const [name, script, helper, source, args, input] of [
+    ["path-guard without repo-root.mjs", "path-guard.mjs", null, "", ["src/data"], { file_path: "src/data/x.ts" }],
+    ["bash-guard without guard-profiles.mjs", "bash-guard.mjs", null, "", ["read-only"], { command: "git status" }],
+    [
+      "bash-guard with a throwing guard-profiles.mjs",
+      "bash-guard.mjs",
+      "guard-profiles.mjs",
+      'throw new Error("bad profile");\n',
+      ["read-only"],
+      { command: "git status" },
+    ],
+  ]) {
+    test(`blocks: ${name}`, () => {
+      const dir = isolated(script, helper, source);
+      try {
+        const { status } = spawnSync("node", [path.join(dir, script), ...args], {
+          input: JSON.stringify({ tool_input: input }),
+          encoding: "utf8",
+          env: { ...process.env, CLAUDE_PROJECT_DIR: PROJECT_DIR },
+        });
+        assert.equal(status, BLOCKED);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe("path-guard", () => {
+  const scope = ["src/data", ".agents/memory/decisions.md"];
+  for (const [filePath, expected] of [
+    ["src/data/schema/schema.sql", ALLOWED],
+    [path.join(PROJECT_DIR, "src/data/schema/seed.ts"), ALLOWED],
+    [".agents/memory/decisions.md", ALLOWED],
+    ["src/data/../../AGENTS.md", BLOCKED],
+    ["src/data-evil/x.ts", BLOCKED],
+    [".agents/memory/decisions.md.bak", BLOCKED],
+    ["src/app/auth.ts", BLOCKED],
+  ]) {
+    test(`${expected === ALLOWED ? "allows" : "blocks"} ${filePath}`, () =>
+      expectExit(
+        "path-guard.mjs",
+        scope,
+        JSON.stringify({ tool_input: { file_path: filePath } }),
+        expected,
+      ));
+  }
+});
+
+// In a worktree session $CLAUDE_PROJECT_DIR is the main checkout, but the payload `cwd` is the worktree.
+describe("path-guard in worktrees", () => {
+  let tmp;
+  let main;
+  let wt;
+  let other;
+  let bad;
+  let rel;
+  let copied;
+  const forged = {};
+  // A worktree as git registers it: a .git file pointing at <main>/.git/worktrees/<name>,
+  // whose `gitdir` file points back at that .git file.
+  const addWorktree = (
+    dir,
+    name,
+    gitdirLine = `gitdir: ${path.join(main, ".git/worktrees", name)}`,
+  ) => {
+    fs.mkdirSync(path.join(main, ".git/worktrees", name), { recursive: true });
+    fs.mkdirSync(path.join(dir, "src/data/schema"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".git"), `${gitdirLine}\n`);
+    fs.writeFileSync(
+      path.join(main, ".git/worktrees", name, "gitdir"),
+      `${path.join(dir, ".git")}\n`,
+    );
+  };
+  before(() => {
+    tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "path-guard-"));
+    main = path.join(tmp, "main");
+    wt = path.join(main, ".claude/worktrees/wt");
+    other = path.join(tmp, "other");
+    bad = path.join(main, ".claude/worktrees/bad");
+    rel = path.join(main, ".claude/worktrees/rel");
+    copied = path.join(tmp, "elsewhere");
+    fs.mkdirSync(path.join(main, ".git"), { recursive: true });
+    addWorktree(wt, "wt");
+    addWorktree(rel, "rel", "gitdir: ../../../.git/worktrees/rel");
+    fs.mkdirSync(path.join(other, ".git"), { recursive: true });
+    fs.mkdirSync(bad, { recursive: true });
+    fs.writeFileSync(path.join(bad, ".git"), "garbage\n");
+    // A .git file copied elsewhere still points at wt's admin dir, whose back-pointer names wt.
+    fs.mkdirSync(path.join(copied, "src/data"), { recursive: true });
+    fs.copyFileSync(path.join(wt, ".git"), path.join(copied, ".git"));
+    for (const [name, line] of [
+      ["escape", `gitdir: ${path.join(main, ".git/worktrees")}/../../../other/.git`],
+      ["evil", `gitdir: ${path.join(main, ".git/worktrees-evil/x")}`],
+      ["outside", "gitdir: ../../../.git/worktrees/wt"],
+    ]) {
+      forged[name] = path.join(tmp, "forged", name);
+      fs.mkdirSync(path.join(forged[name], "src/data"), { recursive: true });
+      fs.writeFileSync(path.join(forged[name], ".git"), `${line}\n`);
+    }
+  });
+  after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+  const guard = (scope, cwd, filePath, expected) => {
+    const payload = { tool_input: { file_path: filePath } };
+    if (cwd !== undefined) payload.cwd = cwd;
+    const { status } = runHook("path-guard.mjs", scope, JSON.stringify(payload), main);
+    if (status !== expected) {
+      throw new Error(`expected exit ${expected}, got ${status} for cwd=${cwd} file=${filePath}`);
+    }
+  };
+  const scoped = ["src/data", ".agents/memory/decisions.md"];
+  const cases = [
+    ["worktree edit in scope", () => [wt, path.join(wt, "src/data/HOOK_TEST.tmp")], ALLOWED],
+    ["relative path in the worktree", () => [wt, "src/data/x.ts"], ALLOWED],
+    [
+      "cwd in a worktree subdirectory",
+      () => [path.join(wt, "src/data/schema"), path.join(wt, "src/data/x.ts")],
+      ALLOWED,
+    ],
+    ["worktree edit out of scope", () => [wt, path.join(wt, "src/app/x.ts")], BLOCKED],
+    ["the main checkout from a worktree", () => [wt, path.join(main, "src/data/x.ts")], BLOCKED],
+    ["traversal out of scope", () => [wt, path.join(wt, "src/data/../../AGENTS.md")], BLOCKED],
+    ["main checkout edit in scope", () => [main, path.join(main, "src/data/x.ts")], ALLOWED],
+    ["no cwd, main checkout", () => [undefined, path.join(main, "src/data/x.ts")], ALLOWED],
+    ["no cwd, worktree path", () => [undefined, path.join(wt, "src/data/x.ts")], BLOCKED],
+    ["non-string cwd", () => [42, path.join(wt, "src/data/x.ts")], BLOCKED],
+    ["relative cwd", () => ["packages", path.join(wt, "src/data/x.ts")], BLOCKED],
+    ["an unrelated repo", () => [other, path.join(other, "src/data/x.ts")], BLOCKED],
+    ["a garbage .git file", () => [bad, path.join(bad, "src/data/x.ts")], BLOCKED],
+    ["a relative gitdir worktree", () => [rel, path.join(rel, "src/data/x.ts")], ALLOWED],
+    ["a copied .git file", () => [copied, path.join(copied, "src/data/x.ts")], BLOCKED],
+    ...["escape", "evil", "outside"].map((name) => [
+      `a forged gitdir (${name})`,
+      () => [forged[name], path.join(forged[name], "src/data/x.ts")],
+      BLOCKED,
+    ]),
+  ];
+  for (const [name, args, expected] of cases) {
+    test(`${expected === ALLOWED ? "allows" : "blocks"} ${name}`, () =>
+      guard(scoped, ...args(), expected));
+  }
+  test("allows the retro scope in a worktree", () =>
+    guard(
+      [".agents/memory/lessons.md", "docs/next-steps.md"],
+      wt,
+      path.join(wt, ".agents/memory/lessons.md"),
+      ALLOWED,
+    ));
+});
