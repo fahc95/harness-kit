@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "description": "The template contract: every {{TOKEN}} and kit:if flag a template may use. The render script fills tokens from detect and the owner's answers and fails on any token that is unknown, unfilled or does not match its type. See docs/templates.md in the kit repo.",
+  "types": {
+    "string": {
+      "pattern": "^[^{}<>`\\r\\n]+$",
+      "description": "One line of prose. No braces, angle brackets or backticks, so a value can't open a token, a tag or a code span."
+    },
+    "identifier": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(/[A-Za-z0-9][A-Za-z0-9_.-]*)?$",
+      "description": "A name such as a branch prefix or owner/repo. Safe in shell, YAML and Markdown."
+    },
+    "path": {
+      "pattern": "^(?!.*\\.\\.)[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*/?$",
+      "description": "A repo-relative path. No leading slash, no '..'."
+    },
+    "date": {
+      "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$",
+      "description": "YYYY-MM-DD or YYYY-MM."
+    },
+    "command": {
+      "pattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
+      "description": "One command line with no shell metacharacters (no quotes, $, ;, |, &, redirects or globs), so it can be matched exactly by a guard."
+    },
+    "json-array": {
+      "pattern": null,
+      "description": "A JSON array, inserted as a literal. Used only in .mjs and .json templates."
+    }
+  },
+  "tokens": {
+    "PROJECT_NAME": {
+      "type": "string",
+      "description": "The project's display name.",
+      "source": "answers",
+      "example": "Example App"
+    },
+    "OWNER": {
+      "type": "string",
+      "description": "The human who approves plans and merges.",
+      "source": "answers",
+      "example": "Alex"
+    },
+    "BRANCH_PREFIX": {
+      "type": "identifier",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Branch prefix; branches are <prefix>/<type>-<slug>.",
+      "source": "answers",
+      "example": "alex"
+    },
+    "ENV_PREFIX": {
+      "type": "identifier",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "Prefix of the pre-push override variable, <ENV_PREFIX>_ALLOW_PUSH_MAIN.",
+      "source": "derived from PROJECT_NAME, confirmed by the owner",
+      "example": "EXAMPLE_APP"
+    },
+    "KIT_VERSION": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "The kit version that rendered the files.",
+      "source": "kit",
+      "example": "0.1.0"
+    },
+    "DATE": {
+      "type": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "Install date.",
+      "source": "render",
+      "example": "2026-01-15"
+    },
+    "CMD_TYPECHECK": {
+      "type": "command",
+      "when": "has.typecheck",
+      "description": "The detected typecheck command.",
+      "source": "detect",
+      "example": "npm run typecheck"
+    },
+    "CMD_LINT": {
+      "type": "command",
+      "when": "has.lint",
+      "description": "The detected lint command.",
+      "source": "detect",
+      "example": "npm run lint"
+    },
+    "CMD_TEST": {
+      "type": "command",
+      "when": "has.test",
+      "description": "The detected test command.",
+      "source": "detect",
+      "example": "npm test"
+    },
+    "CMD_CHECKS": {
+      "type": "string",
+      "when": "has.checks",
+      "description": "The detected check commands (typecheck, lint, test, in that order) joined with ' && '.",
+      "source": "derived from CMD_TYPECHECK, CMD_LINT and CMD_TEST",
+      "example": "npm run typecheck && npm run lint && npm test"
+    },
+    "CMD_HOOK_TESTS": {
+      "type": "string",
+      "description": "The command that runs the harness's own script tests (hook guards, skill scripts, git hooks).",
+      "source": "render",
+      "example": "node --test \".claude/hooks/*.test.mjs\""
+    },
+    "DB_PATH": {
+      "type": "path",
+      "when": "has.db",
+      "description": "The folder holding the schema and migrations, which the architect may edit.",
+      "source": "detect",
+      "example": "db/"
+    },
+    "PERSONA_NAME_BUILDER": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the main session (the builder).",
+      "source": "answers",
+      "default": "Brunelleschi",
+      "example": "Builder"
+    },
+    "PERSONA_NAME_ARCHITECT": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the architect persona.",
+      "source": "answers",
+      "default": "Gaudí",
+      "example": "Architect"
+    },
+    "PERSONA_NAME_PLANNER": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the planner persona.",
+      "source": "answers",
+      "default": "DaVinci",
+      "example": "Planner"
+    },
+    "PERSONA_NAME_REVIEWER": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the reviewer persona.",
+      "source": "answers",
+      "default": "Galilei",
+      "example": "Reviewer"
+    },
+    "PERSONA_NAME_RETRO": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the retro persona.",
+      "source": "answers",
+      "default": "Newton",
+      "example": "Retro"
+    },
+    "PERSONA_NAME_RESEARCHER": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the researcher persona.",
+      "source": "answers",
+      "default": "Sherlock",
+      "example": "Researcher"
+    }
+  },
+  "flags": {
+    "has.db": {
+      "description": "The repo owns a database schema or migrations.",
+      "source": "detect"
+    },
+    "has.ui": {
+      "description": "The project has a user-facing UI.",
+      "source": "detect, confirmed by the owner"
+    },
+    "has.container": {
+      "description": "A container image is the production artifact.",
+      "source": "detect"
+    },
+    "has.typecheck": {
+      "description": "A typecheck command was found.",
+      "source": "detect"
+    },
+    "has.lint": {
+      "description": "A lint command was found.",
+      "source": "detect"
+    },
+    "has.test": {
+      "description": "A test command was found.",
+      "source": "detect"
+    },
+    "has.checks": {
+      "description": "At least one of has.typecheck, has.lint and has.test.",
+      "source": "derived"
+    },
+    "module.openPr": {
+      "description": "The open-pr module is installed.",
+      "source": "answers"
+    },
+    "module.prePush": {
+      "description": "The githooks-pre-push module is installed.",
+      "source": "answers"
+    }
+  }
+}

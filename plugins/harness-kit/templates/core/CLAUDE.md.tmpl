@@ -1,0 +1,20 @@
+# CLAUDE.md: {{PROJECT_NAME}}
+
+@AGENTS.md
+
+`AGENTS.md` (imported above) is the provider-agnostic source of truth. Put anything that applies to every agent there, not here. This file holds only Claude Code wiring.
+
+## Claude Code wiring
+
+- The main session is **{{PERSONA_NAME_BUILDER}}**, the builder (see the team table in `AGENTS.md`).
+- Sub-agents in `.claude/agents/` are thin wrappers over the personas in `.agents/personas/`: `architect`, `planner`, `reviewer`, `retro`, `researcher`. Each keeps only Claude frontmatter (name, description, tools, model, color, and, where needed, the `hooks` that enforce its scope) and tells the sub-agent to read its persona file. Invoke them with the Agent tool.
+- Scope hooks live in `.claude/hooks/`: `bash-guard.mjs <profile>` (Bash allowlist per persona, generated from this repo's check commands in `guard-profiles.mjs`) and `path-guard.mjs <paths>` (where Edit and Write may go). They fail closed and apply only when a persona runs as a sub-agent; slash commands and the main session use the session's own permissions. Their regression tests are `.claude/hooks/guards.test.mjs` (`{{CMD_HOOK_TESTS}}`); run them after any guard change.
+- **Worktree sessions** read settings, agents, commands and hook scripts from the main checkout, and `$CLAUDE_PROJECT_DIR` points there too. So a guard or agent change made on a branch is live only after it merges and main is pulled, and the main checkout must stay on `main` (`AGENTS.md` "Git & PRs"). Hooks that resolve file paths use the payload `cwd` (the worktree) through `repo-root.mjs`, not `$CLAUDE_PROJECT_DIR`.
+- Slash commands in `.claude/commands/` are thin wrappers that `@`-import the playbooks in `.agents/workflows/`: `/plan`, `/review`, `/feature`, `/retro`.
+- Edit behavior in `.agents/`, never in the wrappers. If a wrapper ever disagrees with its `.agents/` file, `.agents/` wins.
+<!-- kit:if module.openPr -->
+- Skills in `.claude/skills/<name>/SKILL.md` are thin wrappers over `.agents/skills/<name>/SKILL.md`. They hold Claude-only frontmatter and a body that says to read and follow the source, with `$ARGUMENTS`. Claude Code does not read `.agents/skills/`. Today: `open-pr` (model-invocable, run only once {{OWNER}} asks for a PR). Skill scripts live in `.agents/skills/<name>/scripts/`; they are run by a repo-relative path from `git rev-parse --show-toplevel`, because `$CLAUDE_PROJECT_DIR` is the main checkout in worktree sessions.
+<!-- kit:end -->
+- Rules in `.claude/rules/<topic>.md` are thin adapters over `.agents/rules/<topic>.md`. Each carries `paths:` frontmatter and loads when a matching file is read or edited, not at launch; its body says to read the source. Edit the source.
+- `.claude/settings.json` `permissions.deny` blocks Read and Edit on `.env` files, at any depth relative to the session (`**/`) and anywhere on disk (`//**/`), so worktree sessions can't read the main checkout's files either. Per the Claude Code docs it also covers recognized shell file commands like `cat`; sub-agents inherit it. A program that opens the file itself is not covered, so this is a rule plus best-effort enforcement, not a guarantee.
+- Memory lives in `.agents/memory/` (decisions, lessons, learning log). There is no `.claude/` copy of it.

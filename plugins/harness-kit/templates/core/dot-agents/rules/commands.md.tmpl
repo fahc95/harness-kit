@@ -1,0 +1,22 @@
+# Rule: commands the agent may run without asking
+
+This rule is not file-scoped, so it has no `.claude/rules/` adapter. Claude Code enforces it through `permissions.allow` in `.claude/settings.json`; `AGENTS.md` "Rules" lists it for every other agent.
+
+{{OWNER}} authorizes the agent to run these commands without asking each time:
+
+<!-- kit:if has.typecheck -->
+- `{{CMD_TYPECHECK}}`
+<!-- kit:end -->
+<!-- kit:if has.lint -->
+- `{{CMD_LINT}}`
+<!-- kit:end -->
+<!-- kit:if has.test -->
+- `{{CMD_TEST}}`
+<!-- kit:end -->
+- `git status`, `git diff`, `git log`, `git show`, `git add`, `git commit`
+
+<!-- kit:adapt: Add the project's safe local commands (install dependencies, start the dev server, start or stop local services, a production build that only writes local files), one bullet each with a short comment. Never add a command that reaches production. -->
+
+When this list and `.claude/settings.json` disagree, the stricter one applies; fix the other in the same PR.
+
+Any command outside this list, and any command that rewrites git history, deletes files, or changes external infrastructure, needs {{OWNER}}'s confirmation first. Commands that reach production (ssh to a server, deploys, data scripts that write to a production database) are never on this list.

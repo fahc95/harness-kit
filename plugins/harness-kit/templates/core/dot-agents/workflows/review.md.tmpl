@@ -1,0 +1,47 @@
+# Workflow: Code Review
+
+**Goal**: Review a change (the working diff, or a branch against `main`) with the `reviewer` persona ({{PERSONA_NAME_REVIEWER}}) before declaring a task complete or merging. Required before finishing any task.
+
+---
+
+## Scope the review to the risk
+
+A review costs 30k to 120k tokens, and a PR often gets several passes, so size each one before briefing {{PERSONA_NAME_REVIEWER}}:
+
+- **Full review (Opus, the persona default)**: application code, CI workflows, hook or guard scripts, `.claude/settings.json`, and any `.claude/agents/` wrapper whose `hooks`, `tools`, `model`, `effort` or `maxTurns` changed.
+<!-- kit:adapt: Add the project's own high-risk paths to the full-review bullet above (schema and migrations, auth, deploy config, container files). -->
+- **Light review (Sonnet, pass `model: sonnet` on the Agent call)**: diffs that are only docs, `.agents/` Markdown or `.claude/` wrappers whose frontmatter is untouched.
+- **Re-review after fixes**: brief {{PERSONA_NAME_REVIEWER}} with the previous findings and the fix commit only (`git diff <reviewed-sha>..HEAD`). Re-audit just those findings and anything the fix touched, not the whole PR. Aim for at most two passes; a third means the first brief was too thin.
+- **A capped run is not a review**: if {{PERSONA_NAME_REVIEWER}} returns nothing or no verdict (for example it hit `maxTurns`), treat the review as not run, never as an approval, and re-brief with a narrower scope.
+
+## Steps
+
+1. **Context & Diff Inspection**:
+   - Read `AGENTS.md` and the nested `AGENTS.md` files for the areas touched.
+   - Uncommitted work: `git status` and `git diff HEAD`. A branch: `git diff origin/main...HEAD` and `git log --oneline origin/main..HEAD`.
+
+2. **Automated Verification**:
+<!-- kit:if has.checks -->
+   Run the checks and capture all outputs, warnings and errors:
+<!-- kit:end -->
+<!-- kit:if has.typecheck -->
+   - `{{CMD_TYPECHECK}}`
+<!-- kit:end -->
+<!-- kit:if has.lint -->
+   - `{{CMD_LINT}}`
+<!-- kit:end -->
+<!-- kit:if has.test -->
+   - `{{CMD_TEST}}`
+<!-- kit:end -->
+   A check that can't run, or that the project has no command for, is reported "not run: <reason>".
+
+3. **Checklist Audit**:
+   Audit the diff against the complete checklist in `.agents/personas/reviewer.md`. Don't restate it here; the persona file is the source.
+
+4. **Deliver Verdict**:
+   Produce the structured review report with:
+   - **Verdict**: `APPROVE`, `REQUEST_CHANGES`, or `BLOCK`
+   - **Summary**: 1-3 sentences
+   - **Findings**: Must fix (blockers), Should fix, Nits
+   - **Questions for {{OWNER}}**: only when a call is genuinely theirs; omitted otherwise
+   - **CI Results**: one line per check

@@ -1,0 +1,49 @@
+# Template contract
+
+How templates under `plugins/harness-kit/templates/` are written. The machine-readable source is [`templates/vocabulary.json`](../plugins/harness-kit/templates/vocabulary.json); `plugins/harness-kit/scripts/template-lint.test.mjs` enforces everything below. The decision is ADR-002 in [decisions.md](decisions.md).
+
+## Layout and path mapping
+
+- Each module has a root: `templates/core/`, `templates/common/<id>/` or `templates/examples/<id>/`. Under it, files mirror their path in the target repo.
+- The target path is the template path with the module root and the `.tmpl` suffix removed, and every `dot-<x>` segment turned into `.<x>`. For example, `core/dot-agents/personas/planner.md.tmpl` renders to `.agents/personas/planner.md`.
+- Every template file ends in `.tmpl` and no path segment starts with a dot, so a session in this repo never loads a template as a live rule, skill, agent or `CLAUDE.md`, and `node --test` never runs a template test.
+- The only files under `templates/` without `.tmpl` are the data files `modules.json` (the module registry) and `vocabulary.json` (this contract). Nothing auto-loads them.
+- The only token allowed in a path is `{{DATE_YM}}`.
+
+## Tokens
+
+- Written `{{UPPER_SNAKE}}`. Each one is declared in `vocabulary.json` with a type, a description, a source (detect, answers, render, kit or derived) and a generic example.
+- Types: `string` (one line, no braces, angle brackets or backticks), `identifier`, `path`, `date`, `command` (no shell metacharacters) and `json-array`. A token can narrow its type with its own `pattern`.
+- Every non-array token has an implicit `NAME_JSON` twin: its value as a JSON literal.
+- `.mjs` templates may use only `_JSON` tokens, so a value always lands as data, never as code or a raw regex. Shell templates may use only `identifier` tokens.
+- A token with a `when` flag (for example `CMD_TEST` with `has.test`) may appear only inside a `kit:if` block on that flag, because it has no value when the flag is false.
+- Rendering fails on an unknown or unfilled token, and on a value that doesn't match its type.
+- Persona display names are tokens (`{{PERSONA_NAME_PLANNER}}`). The reference implementation's names are their defaults and appear only in `vocabulary.json`.
+- There is no escape for a literal `{{` yet. Add one to the contract when a template first needs it.
+
+## Conditionals
+
+| File type | Syntax |
+|---|---|
+| Markdown | `<!-- kit:if has.db -->` … `<!-- kit:end -->` |
+| `.mjs` | `// kit:if has.db` … `// kit:end` |
+| shell, YAML | `# kit:if has.db` … `# kit:end` |
+| JSON | not allowed |
+
+- Each marker sits alone on its line. Blocks don't nest.
+- A flag is `has.*`, `flow.*` or `module.*`, from detect or the owner's answers, declared in `vocabulary.json`. Prefix `!` to negate: `<!-- kit:if !has.db -->`.
+- Render drops the marker lines, and drops the block's content when the flag is false.
+- In YAML frontmatter, a conditional makes the file invalid YAML until it is rendered. The lint test renders each template with every flag on, then every flag off, and checks the frontmatter closes.
+
+## Adapt markers
+
+- `<!-- kit:adapt: <instruction> -->`, alone on its line, Markdown only.
+- It marks prose only the target project can supply: goals, stack rules, drift checks, feature layers. Render leaves it in place; the installer skill has the model replace each one and greps until none remain.
+- A marker may sit inside a `kit:if` block.
+
+## Adding a template or module
+
+1. Write the file under the module root, ending in `.tmpl`, from a reference-implementation file. Strip reference names and stack; use tokens, `kit:if` and `kit:adapt`.
+2. Add any new token or flag to `vocabulary.json`. Every entry must be used: the lint test rejects dead ones, so add an entry in the same PR as its first use.
+3. List the file in its module in `modules.json`, with its `target` (the derived path) and `onExisting` (`merge`, `kit-new` or `skip`).
+4. Run `node --test "plugins/**/*.test.mjs"`.
