@@ -150,6 +150,15 @@ describe("vocabulary", () => {
     }
   });
 
+  test("DB_PATH can't widen the architect's scope, and OWNER can't break a table", () => {
+    const ok = (name, v) => valueMatches(vocabulary.tokens[name], vocabulary.types, v);
+    for (const bad of [".", "./", ".git/", ".claude/", "db/.hidden", "a/../b", "/abs"]) {
+      assert.equal(ok("DB_PATH", bad), false, bad);
+    }
+    assert.equal(ok("DB_PATH", "packages/db/"), true);
+    assert.equal(ok("OWNER", "a|b"), false);
+  });
+
   test("flag names follow the grammar", () => {
     for (const f of flagNames) assert.match(f, /^(has|flow|module)\.[a-z][A-Za-z]*$/);
   });
