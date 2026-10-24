@@ -220,6 +220,7 @@ describe("template tree", () => {
     for (const f of allFiles) {
       for (const seg of f.split("/")) assert.ok(!seg.startsWith("."), `${f}: dot segment`);
       assert.ok(!f.replaceAll("{{DATE_YM}}", "").includes("{{"), `${f}: token in path`);
+      if (f.includes("{{DATE_YM}}")) assert.ok(vocabulary.tokens.DATE_YM, "DATE_YM is not in the vocabulary");
     }
   });
 
@@ -284,7 +285,7 @@ describe("contract usage", () => {
   const usedFlags = new Set(registryFlags.map(baseFlag));
   for (const f of templates) {
     const text = read(f);
-    for (const t of findTokens(text).tokens) usedTokens.add(known.get(t.name)?.base ?? t.name);
+    for (const t of findTokens(`${f}\n${text}`).tokens) usedTokens.add(known.get(t.name)?.base ?? t.name);
     for (const b of parseConditionals(text, commentStyle(deriveTarget(f))).blocks) usedFlags.add(baseFlag(b.flag));
   }
 
@@ -310,6 +311,14 @@ describe("modules.json", () => {
       for (const r of byId.get(id).requires) visit(r, [...trail, id]);
     };
     for (const id of ids) visit(id, []);
+  });
+
+  test("each module flag is a vocabulary flag, and every module.* flag names a module", () => {
+    const moduleFlags = registry.modules.map((m) => m.flag).filter(Boolean);
+    for (const f of moduleFlags) assert.ok(flagNames.includes(f), `unknown module flag ${f}`);
+    for (const f of flagNames.filter((n) => n.startsWith("module."))) {
+      assert.ok(moduleFlags.includes(f), `${f} names no module in modules.json`);
+    }
   });
 
   test("each module has the required fields and known flags", () => {
@@ -366,44 +375,63 @@ describe("modules.json", () => {
 
 // Render the core hooks and settings with the vocabulary examples into a temp repo, then run
 // the rendered guard tests there: a template that renders but doesn't work fails here.
+// Render each module with the vocabulary examples into a temp repo, as the installer will
+// (registry targets, file `when` flags, git hook modes), then run the rendered tests there:
+// a template that renders but doesn't work fails here.
+const renderModule = (id, root, values, flags) => {
+  const mod = registry.modules.find((m) => m.id === id);
+  for (const f of mod.files) {
+    if (f.when && !evalFlag(f.when, flags)) continue;
+    const target = path.join(root, miniRender(f.target, { style: "none", values, flags }));
+    const style = commentStyle(f.target);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, miniRender(read(f.template), { style, values, flags }));
+    if (f.mode) fs.chmodSync(target, Number.parseInt(f.mode, 8));
+  }
+};
+
+// Runs one rendered test file in a child `node --test`; returns how many tests passed.
+const runRenderedTest = (file) => {
+  const check = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
+  assert.equal(check.status, 0, `${file}: ${check.stderr}`);
+  // A child `node --test` must not inherit this runner's context, or it reports to us.
+  const { NODE_TEST_CONTEXT: _drop, ...env } = process.env;
+  const run = spawnSync(process.execPath, ["--test", file], { encoding: "utf8", env });
+  const failures = run.stdout.split("\n").filter((l) => /^not ok|error/.test(l.trim()));
+  assert.equal(run.status, 0, failures.join("\n"));
+  assert.match(run.stdout, /# fail 0/);
+  return Number(run.stdout.match(/# pass (\d+)/)?.[1] ?? 0);
+};
+
+const withTempRepo = (fn) => {
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "kit-render-"));
+  try {
+    return fn(root);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+};
+
 describe("rendered core hooks", () => {
   // Guards against a rendered suite that silently registers nothing (it runs about 100 cases).
   const MIN_GUARD_TESTS = 60;
-  const renderInto = (root, values, flags) => {
-    for (const f of templates.filter((t) => t.startsWith("core/dot-claude/hooks/"))) {
-      const target = path.join(root, deriveTarget(f));
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, miniRender(read(f), { style: "slash", values, flags }));
-    }
-  };
 
   for (const [name, values, flags] of [
     ["has.db true", examples, allFlags(true)],
     ["has.db false", examples, { ...allFlags(true), "has.db": false }],
     ["no check commands", { ...examples, VERIFY_COMMANDS_JSON: [] }, { ...allFlags(true), "has.checks": false }],
   ]) {
-    test(`guards.test passes with ${name}`, () => {
-      const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "kit-hooks-"));
-      try {
-        renderInto(root, values, flags);
+    test(`guards.test passes with ${name}`, () =>
+      withTempRepo((root) => {
+        renderModule("core", root, values, flags);
         const hooks = path.join(root, ".claude/hooks");
         for (const f of fs.readdirSync(hooks)) {
           const check = spawnSync(process.execPath, ["--check", path.join(hooks, f)], { encoding: "utf8" });
           assert.equal(check.status, 0, `${f}: ${check.stderr}`);
         }
-        // A child `node --test` must not inherit this runner's context, or it reports to us.
-        const { NODE_TEST_CONTEXT: _drop, ...env } = process.env;
-        const run = spawnSync(process.execPath, ["--test", path.join(hooks, "guards.test.mjs")], {
-          encoding: "utf8",
-          env,
-        });
-        assert.equal(run.status, 0, run.stdout.split("\n").filter((l) => /^not ok|error/.test(l.trim())).join("\n"));
-        assert.match(run.stdout, /# fail 0/);
-        assert.ok(Number(run.stdout.match(/# pass (\d+)/)?.[1]) >= MIN_GUARD_TESTS, "too few guard tests ran");
-      } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-      }
-    });
+        const passed = runRenderedTest(path.join(hooks, "guards.test.mjs"));
+        assert.ok(passed >= MIN_GUARD_TESTS, `only ${passed} guard tests ran`);
+      }));
   }
 
   test("the settings fragment renders to JSON with the .env deny list and the allow list", () => {
@@ -416,4 +444,40 @@ describe("rendered core hooks", () => {
       assert.ok(settings.permissions.deny.includes(`${verb}(//**/.env)`));
     }
   });
+
+  test("guards.test carries the vocabulary's production list", () => {
+    const text = read("core/dot-claude/hooks/guards.test.mjs.tmpl");
+    const block = text.slice(text.indexOf("const PRODUCTION = ["), text.indexOf("];", text.indexOf("const PRODUCTION = [")));
+    const inTest = [...block.matchAll(/^\s*\/(.+)\/i?,$/gm)].map((m) => m[1].replaceAll("\\/", "/"));
+    // Host names the kit lint keeps out of templates are only in the vocabulary.
+    const inVocabulary = vocabulary.rejectCommandPatterns.production.map((p) => p.replace("|railway", ""));
+    assert.deepEqual(inTest, inVocabulary);
+  });
+});
+
+describe("rendered common modules", () => {
+  test("open-pr: check-pr.test passes", () =>
+    withTempRepo((root) => {
+      renderModule("open-pr", root, examples, allFlags(true));
+      const passed = runRenderedTest(path.join(root, ".agents/skills/open-pr/scripts/check-pr.test.mjs"));
+      assert.ok(passed >= 25, `only ${passed} check-pr tests ran`);
+    }));
+
+  test("githooks-pre-push: the hook is executable and its test passes", () =>
+    withTempRepo((root) => {
+      renderModule("githooks-pre-push", root, examples, allFlags(true));
+      const hook = path.join(root, ".githooks/pre-push");
+      assert.ok(fs.statSync(hook).mode & 0o111, "pre-push is not executable");
+      assert.match(fs.readFileSync(hook, "utf8"), new RegExp(`${examples.ENV_PREFIX}_ALLOW_PUSH_MAIN`));
+      const passed = runRenderedTest(path.join(root, ".githooks/pre-push.test.mjs"));
+      assert.ok(passed >= 7, `only ${passed} pre-push tests ran`);
+    }));
+
+  test("flow-migration: the runbook lands under docs/plans with the install month", () =>
+    withTempRepo((root) => {
+      renderModule("flow-migration", root, examples, allFlags(true));
+      const runbook = path.join(root, `docs/plans/${examples.DATE_YM}-github-flow-migration.md`);
+      assert.ok(fs.existsSync(runbook), "runbook not rendered");
+      assert.match(fs.readFileSync(runbook, "utf8"), /## Manual steps for /);
+    }));
 });

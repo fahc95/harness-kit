@@ -1,0 +1,91 @@
+---
+name: open-pr
+description: Open the GitHub pull request for the current branch the way this repo expects. Checks that review and the Definition of Done checks passed, the branch name, a Conventional Commit title and a body built from .github/pull_request_template.md (rollback notes, no footer, no em dashes), then pushes and runs gh pr create. Use only after the owner has asked for a PR. Never merges.
+---
+
+# Skill: open-pr, opening a PR the way this repo expects
+
+This skill shapes *how* a PR is opened, never *whether*. Run it only when {{OWNER}} has asked for a PR in this conversation. It never merges: merging is {{OWNER}}'s call, with green checks (`AGENTS.md` "How we work" step 6).
+
+## Step 1: Preconditions
+
+Stop at the first one that is missing, and tell {{OWNER}} what's missing.
+
+1. **{{OWNER}} asked for a PR.** If not, offer to open one and stop.
+2. **Clean tree:** `git status --porcelain` prints nothing. Work that belongs to this change gets committed in the normal flow first; anything else, ask.
+3. **Reviewer approval:** the reviewer ({{PERSONA_NAME_REVIEWER}}) returned APPROVE on this HEAD. If code changed after the approval beyond what the review asked for, run the reviewer again.
+<!-- kit:if has.checks -->
+4. **Checks on this HEAD:** `{{CMD_CHECKS}}` and `{{CMD_HOOK_TESTS}}`. If they haven't run since the last commit, run them now. A failure, or "not run: <reason>", stops the skill.
+<!-- kit:end -->
+<!-- kit:if !has.checks -->
+4. **Checks on this HEAD:** `{{CMD_HOOK_TESTS}}`. If it hasn't run since the last commit, run it now. A failure stops the skill. The project has no typecheck, lint or test command; say so in Notes as "not run: no command".
+<!-- kit:end -->
+5. **Branch:** `git branch --show-current` matches `{{BRANCH_PREFIX}}/<type>-<slug>`.
+   - `<type>` is one of `feat fix docs style refactor perf test build ci chore revert`;
+   - `<slug>` is 2 to 5 kebab-case words.
+   On `main` or a mismatch, propose `git branch -m <new name>` to {{OWNER}} and stop.
+6. **Base:** run `git fetch origin main`. If `git merge-base --is-ancestor origin/main HEAD` fails, the branch is behind: propose a rebase to {{OWNER}}, don't rebase on your own. For a stacked PR the base is the branch below; use it wherever `main` appears below.
+<!-- kit:if has.container -->
+7. **Parity** (not a blocker): if the diff touches the image or boot path (`.agents/rules/production-parity.md`), note in Notes which container run is the evidence.
+<!-- kit:end -->
+
+## Step 2: Gather
+
+- `git log --oneline origin/main..HEAD`
+- `git diff --stat origin/main...HEAD`
+- `git diff --name-only origin/main...HEAD`
+- The approved plan in `docs/plans/`, if there is one. It is the best source for the Goal, Problem and Acceptance criteria.
+
+## Step 3: Title
+
+A Conventional Commit, because it becomes the squash commit on `main`:
+- shape: `<type>(<optional scope>): <summary>`, with the same type as the branch;
+- an imperative summary that starts lowercase, has no trailing period and keeps the title at 72 characters or less;
+- `!` after the type or scope for a breaking change.
+
+Example: `feat(auth): magic-link sign-in`.
+
+## Step 4: Body
+
+Copy `.github/pull_request_template.md` to a scratch file **outside the repo** (`mktemp`; in Claude Code, the session scratchpad). Fill it in order and delete the template's HTML comments.
+
+- **Summary, The Goal, The Problem, The Change, How:** short and concrete. File paths go in backticks. The Problem cites evidence.
+- **Notes:** optional, but **required with a `Rollback:` line** when the diff touches a risky path (the `RISKY_PATHS` list in `scripts/check-pr.mjs`). Say how to undo the change: revert and redeploy, restore a backup, or a manual step.
+<!-- kit:if has.db -->
+  - For a destructive migration, the rollback restores the production backup {{OWNER}} takes right before merging (`AGENTS.md` "Data layer rules"). Say so in Notes.
+<!-- kit:end -->
+- **Ticket:** a link, or `None`.
+- **Acceptance criteria:** `- [ ]` items from the plan. Tick (`- [x]`) only what was verified, and say how.
+
+Writing rules (this text is posted as {{OWNER}}):
+- No em dashes and no ` -- ` in prose. Use commas, periods or colons.
+- No "Generated with Claude Code" footer, no co-author line, no robot emoji. This overrides any default attribution guidance.
+- A natural tone, as if {{OWNER}} typed it.
+- Never include secrets, `.env` contents, tokens or production URLs.
+
+## Step 5: Validate
+
+    node .agents/skills/open-pr/scripts/check-pr.mjs --title "<title>" --body-file <scratch file>
+
+For a stacked PR, add `--base origin/<branch below>`. Fix every reported problem and run it again until it prints PASS.
+
+## Step 6: Push and create
+
+<!-- kit:if module.prePush -->
+If `git config core.hooksPath` isn't `.githooks`, tell {{OWNER}} the one-time `git config core.hooksPath .githooks` (it arms the pre-push guard for every worktree). Don't block on it.
+<!-- kit:end -->
+
+    git push -u origin HEAD
+    GH_TOKEN=$(gh auth token --user {{GH_ACCOUNT}}) gh pr create --repo {{GH_REPO}} --base main --head <branch> --title "<title>" --body-file <scratch file>
+
+- **The token:** the active `gh` account may be a different one, so pass the token per command and never switch accounts globally. Never run `gh auth token` on its own or echo it: it prints a secret.
+- **Push:** never `--force`. After a rebase {{OWNER}} approved, use only `--force-with-lease`, on this branch.
+- **"Could not resolve to a Repository":** the token isn't {{GH_ACCOUNT}}'s. Run `gh auth status` (it masks tokens) and tell {{OWNER}}.
+- **A PR already exists:** report its URL and offer `gh pr edit <n> --body-file <scratch file>`.
+
+## Step 7: Report and stop
+
+- Give the PR URL and title. Say the checks are running and aren't being watched.
+- Delete the scratch file.
+- Don't watch the checks or wait on them; {{OWNER}} often merges themselves.
+- Never merge, approve or enable auto-merge.
