@@ -176,15 +176,30 @@ export function frontmatterErrors(text) {
   return errors;
 }
 
-/** Does a value match its vocabulary entry (type pattern, then the entry's own pattern)? */
-export function valueMatches(entry, types, value) {
+/** The command inside a value or array item: a Bash(...) rule's content, minus its " *". */
+const commandOf = (v) => v.match(/^Bash\((.*?)( \*)?\)$/)?.[1] ?? v;
+
+/**
+ * Does a value fit its vocabulary entry? It must match the type pattern and the entry's own
+ * pattern (or, for an array, each item its itemPattern), and no command in it may match
+ * vocabulary.rejectCommandPatterns (production backstop, and entries bash-guard would block).
+ */
+export function valueMatches(entry, vocabulary, value) {
+  const reject = (vocabulary.rejectCommandPatterns?.patterns ?? []).map((p) => new RegExp(p, "u"));
+  const clean = (cmd) => !reject.some((re) => re.test(commandOf(cmd)));
   if (entry.type === "json-array") {
     const item = entry.itemPattern && new RegExp(entry.itemPattern, "u");
-    return Array.isArray(value) && value.every((v) => typeof v === "string" && (!item || item.test(v)));
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (v) => typeof v === "string" && (!item || item.test(v)) && (!entry.commandItems || clean(v)),
+      )
+    );
   }
   if (typeof value !== "string") return false;
-  const patterns = [types[entry.type]?.pattern, entry.pattern].filter(Boolean);
-  return patterns.every((p) => new RegExp(p, "u").test(value));
+  const patterns = [vocabulary.types[entry.type]?.pattern, entry.pattern].filter(Boolean);
+  if (!patterns.every((p) => new RegExp(p, "u").test(value))) return false;
+  return entry.type !== "command" || clean(value);
 }
 
 /** The token names a template may use: each vocabulary token, and NAME_JSON for non-arrays. */

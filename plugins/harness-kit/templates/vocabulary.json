@@ -27,6 +27,21 @@
       "description": "A JSON array of strings, inserted as a literal. Its name ends in _JSON and it has no twin. Each item must match the token itemPattern. Used only in .mjs and .json templates."
     }
   },
+  "rejectCommandPatterns": {
+    "description": "A value is rejected at render time if any command in it (a command token, an item of VERIFY_COMMANDS_JSON or DB_COMMANDS_JSON, or the command inside a Bash(...) rule) matches one of these. The first group is a production backstop (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts); it is not the classifier, so a match means: ask the owner, never allow. The second group is what bash-guard blocks anyway (inline env assignments, git --output), so such an entry could never run.",
+    "patterns": [
+      "^(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\\b",
+      "^(gh|git push|docker push|docker login)\\b",
+      "^(fly|flyctl|vercel|netlify|heroku|railway|firebase|wrangler|supabase|aws|gcloud|az)\\b",
+      "(^|[\\s:])(deploy|release|publish|push)(:[\\w-]+)?(\\s|$)",
+      "(^|[\\s:-])remote\\b",
+      "://",
+      "@[\\w-]+\\.[\\w.-]+",
+      "prod",
+      "(^| )[A-Z_]+=",
+      "(^| )--ou"
+    ]
+  },
   "tokens": {
     "PROJECT_NAME": {
       "type": "string",
@@ -168,7 +183,8 @@
         "npm run typecheck",
         "npm run lint",
         "npm test"
-      ]
+      ],
+      "commandItems": true
     },
     "DB_COMMANDS_JSON": {
       "type": "json-array",
@@ -180,11 +196,12 @@
         "npm run db:generate",
         "npm run db:migrate:local",
         "npm run db:seed"
-      ]
+      ],
+      "commandItems": true
     },
     "ALLOW_RULES_JSON": {
       "type": "json-array",
-      "itemPattern": "^Bash\\([A-Za-z0-9_@./:=+ -]+( \\*)?\\)$",
+      "itemPattern": "^Bash\\([A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*( \\*)?\\)$",
       "description": "permissions.allow entries for .claude/settings.json: git basics plus the local commands in .agents/rules/commands.md. Never a production-reaching command.",
       "source": "classify, confirmed by the owner",
       "example": [
@@ -193,7 +210,8 @@
         "Bash(git status)",
         "Bash(git diff *)",
         "Bash(git log *)"
-      ]
+      ],
+      "commandItems": true
     }
   },
   "flags": {

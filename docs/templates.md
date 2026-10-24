@@ -18,6 +18,7 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 - `.mjs` and `.json` templates may use only `_JSON` tokens, so a value always lands as a JSON literal, never as code, a raw regex or a broken string. Shell and YAML templates may use only `identifier` tokens.
 - A token with a `when` flag (for example `CMD_TEST` with `has.test`) may appear only inside a `kit:if` block on that flag, because it has no value when the flag is false.
 - Rendering fails on an unknown or unfilled token, and on a value that doesn't match its type.
+- Every command value (a `command` token, an item of a `commandItems` array, or the command inside a `Bash(...)` rule) is also checked against `rejectCommandPatterns`: a production backstop (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts) plus what bash-guard blocks anyway. A match is never rendered; the installer asks the owner instead. This backs the hard rule that no production command reaches a guard profile or a tracked `permissions.allow`.
 - Persona display names are tokens (`{{PERSONA_NAME_PLANNER}}`). The reference implementation's names are their defaults and appear only in `vocabulary.json`.
 - There is no escape for a literal `{{` yet. Add one to the contract when a template first needs it.
 
@@ -33,7 +34,7 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 - Each marker sits alone on its line. Blocks don't nest.
 - A flag is `has.*`, `flow.*` or `module.*`, from detect or the owner's answers, declared in `vocabulary.json`. Prefix `!` to negate: `<!-- kit:if !has.db -->`.
 - Render drops the marker lines, and drops the block's content when the flag is false.
-- In YAML frontmatter, a conditional makes the file invalid YAML until it is rendered. The lint test renders each template with every flag on, then every flag off, and checks the frontmatter: it closes, and every line is a block-style `key: value` or `- item`, nested by two spaces. Keep `kit:adapt` markers out of frontmatter.
+- In YAML frontmatter, a conditional makes the file invalid YAML until it is rendered. The lint test renders each template with every flag on, then every flag off, and checks the frontmatter: it closes, and every line is a block-style `key: value` or `- item`, nested by two spaces. Keep `kit:adapt` markers out of frontmatter. This is a line-shape lint, not a YAML parser: it doesn't check that a nested key has a parent or that quotes close.
 
 ## Adapt markers
 
