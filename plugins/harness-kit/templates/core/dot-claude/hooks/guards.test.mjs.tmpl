@@ -58,15 +58,15 @@ const BYPASSES = [
 ];
 
 // A backstop, not the classifier: no allowlisted command may look like it reaches production.
-// Mirrors harness-kit's render-time check; keep it when you edit the profiles.
+// Mirrors harness-kit's render-time check (case-insensitive); keep it when you edit the profiles.
 const PRODUCTION = [
-  /^(\S+ (exec |dlx )?)?(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\b/,
-  /^(\S+ (exec |dlx )?)?(gh|git push|docker push|docker login)\b/,
-  /^(\S+ (exec |dlx )?)?(fly|flyctl|vercel|netlify|heroku|firebase|wrangler|supabase|aws|gcloud|az)\b/,
-  /(^|[\s:])(deploy|release|publish|push)(:[\w-]+)?(\s|$)/,
-  /(^|[\s:-])remote\b/,
-  /:\/\//,
-  /@[\w-]+\.[\w.-]+/,
+  /^(\S+ (exec |dlx )?)?(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\b/i,
+  /^(\S+ (exec |dlx )?)?(gh|git push|docker push|docker login)\b/i,
+  /^(\S+ (exec |dlx )?)?(fly|flyctl|vercel|netlify|heroku|firebase|wrangler|supabase|aws|gcloud|az)\b/i,
+  /(^|[\s:])(deploy|release|publish|push)(:[\w-]+)?(\s|$)/i,
+  /(^|[\s:-])remote\b/i,
+  /:\/\//i,
+  /@[\w-]+\.[\w.-]+/i,
   /prod/i,
 ];
 

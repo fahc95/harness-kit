@@ -1,0 +1,130 @@
+// Tests for the open-pr validator. Run with node --test, like the other harness script tests.
+import assert from "node:assert/strict";
+import { describe, test } from "node:test";
+import { BRANCH_PREFIX, checkPr, RISKY_PATH_ENTRIES } from "./check-pr.mjs";
+
+const BODY = `## Summary
+Adds a thing.
+
+## The Goal
+Ship it.
+
+## The Problem
+It's missing (see #12).
+
+## The Change
+- \`a.ts\`
+
+## How
+Plainly.
+
+## Notes
+None needed.
+
+## Ticket
+None
+
+## Acceptance criteria
+- [x] it works
+`;
+const OK = { title: "feat(harness): add a thing", body: BODY, branch: `${BRANCH_PREFIX}/feat-add-thing` };
+const check = (overrides) => checkPr({ ...OK, ...overrides });
+const fails = (overrides, pattern) => {
+  const r = check(overrides);
+  assert.equal(r.ok, false, "expected a failure");
+  assert.ok(
+    r.errors.some((e) => pattern.test(e)),
+    `no error matched ${pattern}: ${r.errors.join(" | ")}`,
+  );
+};
+const drop = (heading) => BODY.replace(new RegExp(`## ${heading}\\n[^#]*`), "");
+
+describe("checkPr", () => {
+  test("a valid body passes", () => assert.deepEqual(check({}), { ok: true, errors: [] }));
+  test("optional sections may be left out", () =>
+    assert.equal(check({ body: drop("Notes") }).ok, true));
+  test("HTML comments don't count as content", () =>
+    fails({ body: BODY.replace("Ship it.", "<!-- todo -->") }, /"## The Goal" is empty/));
+  test("a missing required section fails", () =>
+    fails({ body: drop("How") }, /missing section "## How"/));
+  test("out-of-order sections fail", () =>
+    fails(
+      {
+        body: BODY.replace("## The Goal", "## TMP")
+          .replace("## Summary", "## The Goal")
+          .replace("## TMP", "## Summary"),
+      },
+      /out of order/,
+    ));
+  test("acceptance criteria need a checkbox", () =>
+    fails({ body: BODY.replace("- [x] it works", "it works") }, /at least one "- \[ \]"/));
+
+  for (const title of [
+    "add a thing",
+    "feat: Add a thing",
+    "Feat: add a thing",
+    "feat: add a thing.",
+    `feat: ${"x".repeat(80)}`,
+  ]) {
+    test(`rejects title "${title.slice(0, 30)}"`, () => fails({ title }, /title/));
+  }
+  test("the title type must match the branch type", () =>
+    fails({ title: "fix: add a thing" }, /doesn't match branch type/));
+  test("a footer hidden in an HTML comment still fails", () =>
+    fails({ body: `${BODY}\n<!-- Generated with Claude Code -->\n` }, /attribution footer/));
+  for (const branch of [
+    "main",
+    "feature/x",
+    `${BRANCH_PREFIX}/feat-x`,
+    `${BRANCH_PREFIX}/feat-a-b-c-d-e-f`,
+    `${BRANCH_PREFIX}/wip-add-thing`,
+    `x${BRANCH_PREFIX}/feat-add-thing`,
+  ]) {
+    test(`rejects branch ${branch}`, () => fails({ branch }, /branch/));
+  }
+
+  // One changed file per risky entry: a file inside a folder entry, or the named file in a subfolder.
+  const touching = (entry) => (entry.endsWith("/") ? `${entry}x.txt` : `sub/${entry}`);
+  for (const entry of RISKY_PATH_ENTRIES) {
+    test(`requires a rollback note when ${entry} changes`, () =>
+      fails({ changedFiles: [touching(entry)] }, /rollback note is required/));
+    if (!entry.endsWith("/")) {
+      test(`requires a rollback note when ${entry} changes at the repo root`, () =>
+        fails({ changedFiles: [entry] }, /rollback note is required/));
+    }
+  }
+  if (RISKY_PATH_ENTRIES.length) {
+    const file = touching(RISKY_PATH_ENTRIES[0]);
+    test("a rollback note satisfies the risky-path rule", () =>
+      assert.equal(
+        check({
+          changedFiles: [file],
+          body: BODY.replace("None needed.", "Rollback: revert and redeploy."),
+        }).ok,
+        true,
+      ));
+  }
+  test("an ordinary file needs no rollback note", () =>
+    assert.equal(check({ changedFiles: ["README.md"], body: BODY }).ok, true));
+
+  test("an em dash fails", () =>
+    fails({ body: BODY.replace("Plainly.", "Plainly — really.") }, /em dash/));
+  test("an em dash in the title fails", () => fails({ title: "feat: add — thing" }, /em dash/));
+  test('" -- " in prose fails', () =>
+    fails({ body: BODY.replace("Plainly.", "Plainly -- really.") }, / -- /));
+  test('" -- " in code is fine', () =>
+    assert.equal(
+      check({
+        body: BODY.replace("Plainly.", "Run `npm test -- --watch`.\n```\nnode x -- y\n```"),
+      }).ok,
+      true,
+    ));
+  for (const footer of [
+    "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "Co-Authored-By: Claude <x@y>",
+    "🤖",
+  ]) {
+    test(`rejects footer ${footer.slice(0, 20)}`, () =>
+      fails({ body: `${BODY}\n${footer}\n` }, /attribution footer/));
+  }
+});

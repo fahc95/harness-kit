@@ -206,6 +206,98 @@
         "core/settings.fragment.json.tmpl"
       ],
       "postInstall": []
+    },
+    {
+      "id": "open-pr",
+      "tier": "common",
+      "flag": "module.openPr",
+      "title": "open-pr skill",
+      "offer": "A skill that opens PRs the way this repo expects: checks review and tests passed, the branch name, a Conventional Commit title and a templated body with rollback notes, then runs gh pr create. Also installs .github/pull_request_template.md.",
+      "default": true,
+      "requires": [
+        "core"
+      ],
+      "when": "has.github",
+      "files": [
+        {
+          "template": "common/open-pr/dot-agents/skills/open-pr/SKILL.md.tmpl",
+          "target": ".agents/skills/open-pr/SKILL.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/open-pr/dot-agents/skills/open-pr/scripts/check-pr.mjs.tmpl",
+          "target": ".agents/skills/open-pr/scripts/check-pr.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/open-pr/dot-agents/skills/open-pr/scripts/check-pr.test.mjs.tmpl",
+          "target": ".agents/skills/open-pr/scripts/check-pr.test.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/open-pr/dot-claude/skills/open-pr/SKILL.md.tmpl",
+          "target": ".claude/skills/open-pr/SKILL.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/open-pr/dot-github/pull_request_template.md.tmpl",
+          "target": ".github/pull_request_template.md",
+          "onExisting": "merge"
+        }
+      ],
+      "settings": [],
+      "postInstall": []
+    },
+    {
+      "id": "githooks-pre-push",
+      "tier": "common",
+      "flag": "module.prePush",
+      "title": "pre-push guard",
+      "offer": "A checked-in git hook that refuses pushes to main, with an owner-only override. Armed once per clone with git config core.hooksPath .githooks.",
+      "default": true,
+      "requires": [
+        "core"
+      ],
+      "when": null,
+      "files": [
+        {
+          "template": "common/githooks-pre-push/dot-githooks/pre-push.test.mjs.tmpl",
+          "target": ".githooks/pre-push.test.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/githooks-pre-push/dot-githooks/pre-push.tmpl",
+          "target": ".githooks/pre-push",
+          "mode": "0755",
+          "onExisting": "kit-new"
+        }
+      ],
+      "settings": [],
+      "postInstall": [
+        "git config core.hooksPath .githooks"
+      ]
+    },
+    {
+      "id": "flow-migration",
+      "tier": "common",
+      "title": "Git Flow to GitHub Flow migration",
+      "offer": "This repo uses Git Flow. Move it to GitHub Flow: the install PR narrows CI triggers to main, removes release and back-sync workflows you approve, keeps docs-only changes from deploying, and adds a runbook of the GitHub settings you change by hand.",
+      "default": true,
+      "requires": [
+        "core",
+        "open-pr"
+      ],
+      "when": "flow.gitFlow",
+      "files": [
+        {
+          "template": "common/flow-migration/docs/plans/{{DATE_YM}}-github-flow-migration.md.tmpl",
+          "target": "docs/plans/{{DATE_YM}}-github-flow-migration.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        }
+      ],
+      "settings": [],
+      "postInstall": []
     }
   ]
 }

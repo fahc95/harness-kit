@@ -1,0 +1,11 @@
+---
+name: open-pr
+description: "Open the GitHub PR for the current branch the way this repo expects: preconditions, the branch name, a Conventional Commit title, a template body with rollback notes, no footer, no em dashes, push, gh pr create. Use only after the owner has asked for a PR. Never merges."
+argument-hint: "[optional: base branch for a stacked PR, or notes for the body]"
+---
+
+Read `.agents/skills/open-pr/SKILL.md` and follow it exactly. It is the source of truth for this skill; if this file disagrees with it, the `.agents/` file wins.
+
+Arguments from {{OWNER}} (may be empty):
+
+$ARGUMENTS

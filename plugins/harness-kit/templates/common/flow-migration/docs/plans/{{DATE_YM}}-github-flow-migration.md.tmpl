@@ -1,0 +1,63 @@
+# Plan: move {{PROJECT_NAME}} from Git Flow to GitHub Flow
+
+**Status:** Draft ({{DATE}}, written by the harness-kit install)
+
+## Summary
+
+{{PROJECT_NAME}} moves from Git Flow (a long-lived `dev` branch promoted to `main` by releases) to GitHub Flow: short branches, squash-merged PRs into `main`, and `main` is production. The install PR makes the in-repo changes listed below. The GitHub settings at the end are manual steps for {{OWNER}}, and nothing here changes them.
+
+<!-- kit:adapt: Add 1 or 2 sentences on why this project is moving now and what it changes for day-to-day work. -->
+
+## Current flow
+
+<!-- kit:adapt: Describe the flow as detected: the long-lived branches, which workflows run on which branch, what deploys from each branch and how (workflow, host watch setting), and any release or back-sync automation. Cite file paths. -->
+
+## In-repo changes in the install PR
+
+### CI triggers
+
+<!-- kit:adapt: List each workflow whose on.pull_request.branches or on.push.branches was narrowed to main, with the before and after. -->
+
+### Release and back-sync workflows removed
+
+<!-- kit:adapt: List each promotion or back-sync workflow deleted with git rm (one row per file, as approved in the install inventory), and what it used to do. Write "None." if there were none. -->
+
+### dev deploy triggers dropped
+
+<!-- kit:adapt: List each deploy trigger that ran from dev and was removed. Write "None." if there were none. -->
+
+### Tests in PR CI
+
+<!-- kit:adapt: If the baseline test run was green, say which workflow now runs the test command on every PR. If it was red, say so, list the failing tests, and add "make tests green, then add them to PR CI" to the manual steps below. -->
+
+### Per-PR previews
+
+<!-- kit:adapt: Describe the preview step added per PR where the host supports it, or say why there is none. -->
+
+### Docs-only changes never deploy
+
+<!-- kit:adapt: List every deploy trigger (workflow paths filters, the host's watch-path setting) and the exclusions added: **/*.md, docs/**, .agents/**, .claude/**, .githooks/**. Exclusions, not an allowlist, so a forgotten runtime path still deploys. -->
+
+### Manual production deploys where there is no staging
+
+<!-- kit:adapt: For each service with no staging environment, say that its production deploy is now manual (workflow_dispatch) until a staging exists. Write "None." if every service has a staging. -->
+
+## Manual steps for {{OWNER}}
+
+The install PR targets `main`, even if the default branch is still `dev`. Do these in order, after it merges. The kit never changes GitHub settings.
+
+- [ ] Confirm the default branch is `main`.
+- [ ] Turn on branch protection for `main`: require a PR, require the CI checks to pass, and block force-pushes.
+- [ ] Retarget every open PR from `dev` to `main`.
+- [ ] Move any `dev`-scoped secrets or environments to the environments `main` uses.
+- [ ] Delete the remote `dev` branch last, once nothing targets it.
+
+<!-- kit:adapt: Add any project-specific manual step found during the install (for example a host setting only the owner can change), each as a checkbox. -->
+
+## Rollback
+
+<!-- kit:adapt: Say how to go back if the move goes wrong: which commit to revert to restore the old workflows, and that dev must not be deleted until the new flow has worked for at least one release. -->
+
+## Risks
+
+<!-- kit:adapt: List the risks for this project, for example: every merge to main now deploys production, so PR checks and previews are the only gate; the install PR's own merge may trigger a deploy if its paths match a deploy filter. -->

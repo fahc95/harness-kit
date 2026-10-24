@@ -1,0 +1,195 @@
+// open-pr validator (.agents/skills/open-pr/SKILL.md).
+// checkPr() is pure, so a CI job can reuse it; the CLI gathers git facts.
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Set by harness-kit at install; edit here if the convention changes.
+export const BRANCH_PREFIX = {{BRANCH_PREFIX_JSON}};
+// Paths whose change needs a "Rollback:" line in Notes. An entry ending in "/" is a folder
+// prefix; any other entry is a file name, matched at any depth.
+export const RISKY_PATH_ENTRIES = {{RISKY_PATHS_JSON}};
+
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const TYPES = "feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert";
+const BRANCH_RE = new RegExp(`^${escapeRegExp(BRANCH_PREFIX)}/(${TYPES})-[a-z0-9]+(-[a-z0-9]+){1,4}$`);
+const TITLE_RE = new RegExp(`^(${TYPES})(\\([a-z0-9-]+\\))?!?: [a-z0-9\`].*[^.]$`);
+const MAX_TITLE = 72;
+// Template order. Notes and Ticket are optional; the rest are required and must not be empty.
+const SECTIONS = [
+  "Summary",
+  "The Goal",
+  "The Problem",
+  "The Change",
+  "How",
+  "Notes",
+  "Ticket",
+  "Acceptance criteria",
+];
+const OPTIONAL = new Set(["Notes", "Ticket"]);
+const RISKY_PATHS = RISKY_PATH_ENTRIES.map((p) =>
+  p.endsWith("/") ? new RegExp(`^${escapeRegExp(p)}`) : new RegExp(`(^|/)${escapeRegExp(p)}$`),
+);
+const FOOTER_RES = [/generated with \[?claude code/i, /co-authored-by:\s*claude/i, /🤖/u];
+const EM_DASH = "—";
+
+const splitSections = (body) => {
+  const sections = [];
+  let current = null;
+  let inFence = false;
+  for (const line of body.split("\n")) {
+    if (/^\s*```/.test(line)) inFence = !inFence;
+    const heading = !inFence && /^## (.+?)\s*$/.exec(line);
+    if (heading) {
+      current = { name: heading[1], lines: [] };
+      sections.push(current);
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  return sections;
+};
+
+// Prose lines only: outside code fences, with inline code removed.
+const proseLines = (text) => {
+  const out = [];
+  let inFence = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (!inFence) out.push(line.replace(/`[^`]*`/g, ""));
+  }
+  return out;
+};
+
+const checkBranchAndTitle = (branch, title) => {
+  const errors = [];
+  if (!BRANCH_RE.test(branch))
+    errors.push(`branch "${branch}" is not ${BRANCH_PREFIX}/<type>-<2-5 word slug>`);
+  if (!TITLE_RE.test(title)) {
+    errors.push(
+      "title is not a Conventional Commit (<type>(<scope>): lowercase summary, no trailing period)",
+    );
+  }
+  if (title.length > MAX_TITLE) errors.push(`title is longer than ${MAX_TITLE} characters`);
+  const branchType = BRANCH_RE.exec(branch)?.[1];
+  const titleType = TITLE_RE.exec(title)?.[1];
+  if (branchType && titleType && branchType !== titleType) {
+    errors.push(`title type "${titleType}" doesn't match branch type "${branchType}"`);
+  }
+  return errors;
+};
+
+const checkSections = (sections) => {
+  const errors = [];
+  const names = sections.map((s) => s.name);
+  for (const name of SECTIONS) {
+    const count = names.filter((n) => n === name).length;
+    if (count === 0 && !OPTIONAL.has(name)) errors.push(`missing section "## ${name}"`);
+    if (count > 1) errors.push(`section "## ${name}" appears ${count} times`);
+  }
+  const order = names.filter((n) => SECTIONS.includes(n)).map((n) => SECTIONS.indexOf(n));
+  if (order.some((v, i) => i > 0 && v < order[i - 1])) {
+    errors.push(`sections are out of order (expected: ${SECTIONS.join(", ")})`);
+  }
+  const required = sections.filter((s) => SECTIONS.includes(s.name) && !OPTIONAL.has(s.name));
+  for (const s of required) {
+    if (s.lines.join("\n").trim() === "") errors.push(`section "## ${s.name}" is empty`);
+  }
+  const ac = sections.find((s) => s.name === "Acceptance criteria");
+  if (ac && !ac.lines.some((l) => /^- \[( |x)\] \S/.test(l))) {
+    errors.push('"## Acceptance criteria" needs at least one "- [ ]" item');
+  }
+  return errors;
+};
+
+const checkNotes = (notes, changedFiles) => {
+  const errors = [];
+  const risky = changedFiles.filter((f) => RISKY_PATHS.some((re) => re.test(f)));
+  if (risky.length > 0 && !/rollback/i.test(notes)) {
+    errors.push(
+      `"## Notes" with a rollback note is required because these changed: ${risky.join(", ")}`,
+    );
+  }
+  return errors;
+};
+
+const checkText = (title, body) => {
+  const errors = [];
+  const text = `${title}\n${body}`;
+  if (text.includes(EM_DASH)) errors.push("em dash (\u2014) found; use a comma, period or colon");
+  if (proseLines(body).some((l) => l.includes(" -- "))) {
+    errors.push('" -- " found in prose; use a comma, period or colon');
+  }
+  for (const re of FOOTER_RES.filter((r) => r.test(text))) {
+    errors.push(`attribution footer found (${re.source}); remove it`);
+  }
+  return errors;
+};
+
+export const checkPr = ({ title = "", body = "", branch = "", changedFiles = [] }) => {
+  const stripped = body.replace(/<!--[\s\S]*?-->/g, "");
+  const sections = splitSections(stripped);
+  const notes = sections.find((s) => s.name === "Notes")?.lines.join("\n") ?? "";
+  const errors = [
+    ...checkBranchAndTitle(branch, title),
+    ...checkSections(sections),
+    ...checkNotes(notes, changedFiles),
+    ...checkText(title, body), // Raw body: a footer hidden in an HTML comment still counts.
+  ];
+  return { ok: errors.length === 0, errors };
+};
+
+const MAX_GIT_OUTPUT = 16 * 1024 * 1024;
+const git = (...args) =>
+  execFileSync("git", args, { encoding: "utf8", maxBuffer: MAX_GIT_OUTPUT }).trim();
+const lines = (s) => s.split("\n").filter(Boolean);
+
+// Git facts for a PR. No shell.
+export const gitFacts = ({ range }) => ({ changedFiles: lines(git("diff", "--name-only", range)) });
+
+const parseArgs = (argv) => {
+  const opts = { base: "origin/main" };
+  for (let i = 0; i < argv.length; i += 2) {
+    const [key, value] = [argv[i], argv[i + 1]];
+    if (value === undefined) return null;
+    if (key === "--title") opts.title = value;
+    else if (key === "--body-file") opts.bodyFile = value;
+    else if (key === "--base") opts.base = value;
+    else return null;
+  }
+  return opts.title && opts.bodyFile ? opts : null;
+};
+
+const main = (argv) => {
+  const opts = parseArgs(argv);
+  if (!opts) {
+    console.error(
+      'usage: node check-pr.mjs --title "<title>" --body-file <file> [--base origin/main]',
+    );
+    return 2;
+  }
+  const range = `${opts.base}...HEAD`;
+  let body;
+  try {
+    body = fs.readFileSync(opts.bodyFile, "utf8");
+  } catch {
+    console.error(`check-pr: cannot read body file ${opts.bodyFile}`);
+    return 2;
+  }
+  const result = checkPr({
+    title: opts.title,
+    body,
+    branch: git("branch", "--show-current"),
+    ...gitFacts({ range }),
+  });
+  process.stdout.write(result.ok ? "PASS\n" : `${result.errors.map((e) => `- ${e}`).join("\n")}\n`);
+  return result.ok ? 0 : 1;
+};
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exitCode = main(process.argv.slice(2));
+}

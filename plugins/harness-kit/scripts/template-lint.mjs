@@ -185,7 +185,12 @@ const commandOf = (v) => v.match(/^Bash\((.*?)( \*)?\)$/)?.[1] ?? v;
  * vocabulary.rejectCommandPatterns (production backstop, and entries bash-guard would block).
  */
 export function valueMatches(entry, vocabulary, value) {
-  const reject = (vocabulary.rejectCommandPatterns?.patterns ?? []).map((p) => new RegExp(p, "u"));
+  const { production = [], blockedByGuard = [] } = vocabulary.rejectCommandPatterns ?? {};
+  // Production patterns ignore case (PROD is still prod); bash-guard's own rules don't.
+  const reject = [
+    ...production.map((p) => new RegExp(p, "iu")),
+    ...blockedByGuard.map((p) => new RegExp(p, "u")),
+  ];
   const clean = (cmd) => !reject.some((re) => re.test(commandOf(cmd)));
   if (entry.type === "json-array") {
     const item = entry.itemPattern && new RegExp(entry.itemPattern, "u");

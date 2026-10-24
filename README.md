@@ -2,7 +2,7 @@
 
 A Claude Code plugin that installs a provider-agnostic agentic development harness into a project: personas, skills, workflows, rules, hooks and memory, adapted to that project.
 
-> **Status: v0.1.0 skeleton.** The marketplace and plugin manifests exist. The `/harness-kit:harness-init` installer and the templates are being built (see [Roadmap](#roadmap)). Installing the plugin today adds nothing.
+> **Status: v0.1.0, unreleased.** The marketplace, the plugin manifest and the templates exist. The `/harness-kit:harness-init` installer is next (see [Roadmap](#roadmap)). Installing the plugin today adds nothing you can run.
 
 ## What it does
 
@@ -41,8 +41,13 @@ harness-kit/
 ├── docs/decisions.md                 # the kit's own ADR log
 └── plugins/harness-kit/
     ├── .claude-plugin/plugin.json    # name and version
+    ├── scripts/template-lint.mjs     # template contract checks, plus their tests
     ├── skills/harness-init/          # the installer (Phase 3)
-    └── templates/                    # inert templates (Phase 2)
+    └── templates/                    # inert templates (docs/templates.md)
+        ├── vocabulary.json           # every {{TOKEN}} and kit:if flag
+        ├── modules.json              # the module registry
+        ├── core/                     # AGENTS.md, CLAUDE.md, .agents/, .claude/
+        └── common/                   # open-pr, githooks-pre-push, flow-migration
 ```
 
 Templates never sit in the plugin's top-level `agents/`, `hooks/` or `commands/` folders, because Claude Code would load those as live components in every project.
@@ -52,7 +57,7 @@ Templates never sit in the plugin's top-level `agents/`, `hooks/` or `commands/`
 | Phase | What |
 |---|---|
 | 1 | This skeleton: marketplace, plugin manifest, CI, docs |
-| 2 | Core templates, plus `open-pr`, `pre-push` and `flow-migration` |
+| 2 | Core templates, plus `open-pr`, `pre-push` and `flow-migration` (done) |
 | 3 | The `/harness-kit:harness-init` installer and its scripts |
 | 4 | Tests on throwaway repos and a brownfield fixture |
 | 5 | First real install on a brownfield project (the v1 finish line) |
