@@ -91,7 +91,7 @@ Production may run the new schema while old code is still serving, so every migr
 - **A rename is never one step:** add, backfill, switch code, drop.
 - **Backfills** go in migration SQL only when idempotent and small; large ones are scripts.
 - **Never** reset the database or push the schema without a migration, and never edit a committed migration; add a follow-up migration instead. You apply migrations only to the local database.
-- **Rollback note:** additive, redeploy the previous version and keep the schema; destructive, restore the backup taken right before the migration reached `main`.
+- **Rollback note:** additive, redeploy the previous version and keep the schema; destructive, restore the backup {{OWNER}} took right before the migration reached `main` (`AGENTS.md` "Data layer rules").
 
 ### Schema conventions
 

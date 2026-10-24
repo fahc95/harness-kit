@@ -151,6 +151,9 @@ When to run each:
 - Every schema change under `{{DB_PATH}}` goes through the `architect` persona.
 - Every migration has a written rollback note in the PR description.
 - Never edit a committed migration; add a follow-up migration instead.
+- Before a PR with a destructive migration merges, {{OWNER}} takes a backup of the production database. The destructive rollback path restores it.
+
+<!-- kit:adapt: Say how the production backup is taken (the command or console steps {{OWNER}} runs) and where restore steps live. If there is no backup procedure yet, say so and add it to docs/next-steps.md as an open item. -->
 <!-- kit:end -->
 
 ## Definition of Done
@@ -186,7 +189,7 @@ For any change to be considered done:
 - **No** reading `.env` files, and no secrets in the repo, PRs, issues or logs (`.agents/rules/env-and-secrets.md`). Scripts that need a credential read it themselves.
 - **No** production-reaching commands (ssh to a server, deploys, data scripts that write to production) unless {{OWNER}} asks for that exact command.
 - **No** skipping the reviewer pass.
-- **No** new dependencies without a one-line justification in `decisions.md`.
+- **No** new dependencies without a one-line justification recorded as an ADR by the `architect`.
 - **No** "I'll fix it later." If it's worth doing, capture it as a TODO in code with a date and an owner.
 
 <!-- kit:adapt: Add the stack-specific do-not lines from the project's existing instructions (for example, banned APIs or patterns). Delete this marker if there are none. -->

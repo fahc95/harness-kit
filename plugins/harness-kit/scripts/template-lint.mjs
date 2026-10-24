@@ -138,11 +138,36 @@ export function miniRender(text, { style, values, flags }) {
   }
   const kept = text.split("\n").filter((_, i) => !drop.has(i + 1)).join("\n");
   return kept.replace(TOKEN_RE, (_, name) => {
-    if (Object.hasOwn(values, name)) return String(values[name]);
+    if (Object.hasOwn(values, name)) {
+      const v = values[name];
+      return Array.isArray(v) ? JSON.stringify(v) : String(v);
+    }
     const base = name.endsWith("_JSON") ? name.slice(0, -"_JSON".length) : null;
     if (base && Object.hasOwn(values, base)) return JSON.stringify(values[base]);
     throw new Error(`unfilled token: ${name}`);
   });
+}
+
+/**
+ * Problems in a rendered file's YAML frontmatter, if it has one: it must close, and each
+ * line must be "key: value", "key:" or a "  - item" list entry, with no HTML comment.
+ */
+export function frontmatterErrors(text) {
+  if (!text.startsWith("---\n")) return [];
+  const lines = text.split("\n");
+  const close = lines.indexOf("---", 1);
+  if (close === -1) return ["frontmatter never closes"];
+  const errors = [];
+  lines.slice(1, close).forEach((line, i) => {
+    const n = i + 2;
+    if (line.includes("<!--")) errors.push(`line ${n}: HTML comment in frontmatter`);
+    else if (!/^[A-Za-z_][\w-]*:( \S.*)?$/.test(line) && !/^ {2}- \S/.test(line)) {
+      errors.push(`line ${n}: not a "key: value" or "  - item" line`);
+    } else if (/^[\w-]+: .*: /.test(line) && !/^[\w-]+: ["']/.test(line)) {
+      errors.push(`line ${n}: unquoted ": " in a value`);
+    }
+  });
+  return errors;
 }
 
 /** Does a value match its vocabulary entry (type pattern, then the entry's own pattern)? */

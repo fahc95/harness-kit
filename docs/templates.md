@@ -15,7 +15,7 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 - Written `{{UPPER_SNAKE}}`. Each one is declared in `vocabulary.json` with a type, a description, a source (detect, answers, render, kit or derived) and a generic example.
 - Types: `string` (one line, no braces, angle brackets or backticks), `identifier`, `path`, `date`, `command` (no shell metacharacters) and `json-array`. A token can narrow its type with its own `pattern`.
 - Every non-array token has an implicit `NAME_JSON` twin: its value as a JSON literal.
-- `.mjs` templates may use only `_JSON` tokens, so a value always lands as data, never as code or a raw regex. Shell templates may use only `identifier` tokens.
+- `.mjs` and `.json` templates may use only `_JSON` tokens, so a value always lands as a JSON literal, never as code, a raw regex or a broken string. Shell and YAML templates may use only `identifier` tokens.
 - A token with a `when` flag (for example `CMD_TEST` with `has.test`) may appear only inside a `kit:if` block on that flag, because it has no value when the flag is false.
 - Rendering fails on an unknown or unfilled token, and on a value that doesn't match its type.
 - Persona display names are tokens (`{{PERSONA_NAME_PLANNER}}`). The reference implementation's names are their defaults and appear only in `vocabulary.json`.
@@ -33,7 +33,7 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 - Each marker sits alone on its line. Blocks don't nest.
 - A flag is `has.*`, `flow.*` or `module.*`, from detect or the owner's answers, declared in `vocabulary.json`. Prefix `!` to negate: `<!-- kit:if !has.db -->`.
 - Render drops the marker lines, and drops the block's content when the flag is false.
-- In YAML frontmatter, a conditional makes the file invalid YAML until it is rendered. The lint test renders each template with every flag on, then every flag off, and checks the frontmatter closes.
+- In YAML frontmatter, a conditional makes the file invalid YAML until it is rendered. The lint test renders each template with every flag on, then every flag off, and checks the frontmatter: it closes, and every line is `key: value` or a `  - item` entry. Keep `kit:adapt` markers out of frontmatter.
 
 ## Adapt markers
 
@@ -45,5 +45,5 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 
 1. Write the file under the module root, ending in `.tmpl`, from a reference-implementation file. Strip reference names and stack; use tokens, `kit:if` and `kit:adapt`.
 2. Add any new token or flag to `vocabulary.json`. Every entry must be used: the lint test rejects dead ones, so add an entry in the same PR as its first use.
-3. List the file in its module in `modules.json`, with its `target` (the derived path) and `onExisting` (`merge`, `kit-new` or `skip`).
+3. List the file in its module in `modules.json`, with its `target` (the derived path), `onExisting` (`merge`, `kit-new` or `skip`), `when` if the file depends on a flag, `adapt: true` if it carries `kit:adapt` markers, and `mode` only for `.githooks/` files.
 4. Run `node --test "plugins/**/*.test.mjs"`.

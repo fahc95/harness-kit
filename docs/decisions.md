@@ -32,7 +32,7 @@ Append-only ADR log for decisions about the kit itself. Decisions about the harn
 
 **Decision**:
 1. `templates/vocabulary.json` declares every token (type, pattern, source, generic example) and every flag. A lint test (`plugins/harness-kit/scripts/template-lint.test.mjs`) rejects unknown, unused or misplaced ones. Details in [templates.md](templates.md).
-2. Every non-array token has an implicit `NAME_JSON` twin. `.mjs` templates use only `_JSON` tokens, so a value lands as a JSON literal, never as code or raw regex. Shell templates use only `identifier` tokens.
+2. Every non-array token has an implicit `NAME_JSON` twin. `.mjs` and `.json` templates use only `_JSON` tokens, so a value lands as a JSON literal, never as code, raw regex or a broken string. Shell and YAML templates use only `identifier` tokens.
 3. `kit:if` accepts a `!` negation (`<!-- kit:if !has.db -->`), so a template can carry both variants of a sentence without nesting.
 4. `templates/modules.json` and `templates/vocabulary.json` are the only files under `templates/` without a `.tmpl` suffix. They are data that nothing auto-loads.
 5. Target path = template path minus the module root and `.tmpl`, with each `dot-<x>` segment turned into `.<x>`.

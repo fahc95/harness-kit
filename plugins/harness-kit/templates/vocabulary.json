@@ -36,9 +36,10 @@
     },
     "OWNER": {
       "type": "string",
-      "description": "The human who approves plans and merges.",
+      "description": "The human who approves plans and merges. No \"|\", because it appears in Markdown tables.",
       "source": "answers",
-      "example": "Alex"
+      "example": "Alex",
+      "pattern": "^[^|]+$"
     },
     "BRANCH_PREFIX": {
       "type": "identifier",
@@ -105,9 +106,10 @@
     "DB_PATH": {
       "type": "path",
       "when": "has.db",
-      "description": "The folder holding the schema and migrations, which the architect may edit.",
+      "description": "The folder holding the schema and migrations, which the architect may edit. No segment may start with a dot, so it can never be the repo root, .git/ or .claude/.",
       "source": "detect",
-      "example": "db/"
+      "example": "db/",
+      "pattern": "^(?!\\.)(?!.*/\\.)[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*/?$"
     },
     "PERSONA_NAME_BUILDER": {
       "type": "string",

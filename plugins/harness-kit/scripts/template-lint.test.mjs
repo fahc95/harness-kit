@@ -12,6 +12,7 @@ import {
   evalFlag,
   findAdaptMarkers,
   findTokens,
+  frontmatterErrors,
   knownTokenNames,
   listTemplateFiles,
   miniRender,
@@ -32,6 +33,7 @@ const baseFlag = (f) => f.replace(/^!/, "");
 const examples = Object.fromEntries(
   Object.entries(vocabulary.tokens).map(([name, entry]) => [name, entry.example]),
 );
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const allFlags = (value) => Object.fromEntries(flagNames.map((f) => [f, value]));
 
 // Names of the reference implementation and its stack. Templates carry tokens instead.
@@ -56,7 +58,7 @@ const FORBIDDEN = [
   ...Object.values(vocabulary.tokens)
     .filter((e) => e.default)
     // \b is ASCII-only, so names like "Gaudí" need Unicode letter lookarounds.
-    .map((e) => new RegExp(`(?<!\\p{L})${e.default}(?!\\p{L})`, "iu")),
+    .map((e) => new RegExp(`(?<!\\p{L})${escapeRegExp(e.default)}(?!\\p{L})`, "iu")),
 ];
 
 const registryFiles = registry.modules.flatMap((m) =>
@@ -122,6 +124,16 @@ describe("helpers", () => {
     assert.equal(miniRender(text, { ...opts, flags: { "has.db": false } }), 'Al\nno db\n"Al"');
     assert.throws(() => miniRender("{{NOPE}}", { ...opts, flags: {} }), /unfilled token: NOPE/);
     assert.throws(() => evalFlag("has.x", {}), /unknown flag/);
+    assert.equal(miniRender("{{L}}", { style: "slash", values: { L: ["a", "b"] }, flags: {} }), '["a","b"]');
+  });
+
+  test("frontmatterErrors needs a closed block of key: value lines", () => {
+    assert.deepEqual(frontmatterErrors("---\nname: x\npaths:\n  - \"a\"\n---\nbody\n---\n"), []);
+    assert.deepEqual(frontmatterErrors("no frontmatter"), []);
+    assert.match(frontmatterErrors("---\nname: x\n").join(), /never closes/);
+    assert.match(frontmatterErrors("---\n<!-- kit:adapt: x -->\n---\n").join(), /HTML comment/);
+    assert.match(frontmatterErrors("---\njust text\n---\n").join(), /not a/);
+    assert.match(frontmatterErrors("---\ndescription: a: b\n---\n").join(), /unquoted/);
   });
 });
 
@@ -176,8 +188,10 @@ describe("template tree", () => {
           const where = `line ${t.line} {{${t.name}}}`;
           const k = known.get(t.name);
           assert.ok(k, `${where}: unknown token`);
-          if (style === "slash") assert.ok(t.name.endsWith("_JSON"), `${where}: .mjs allows only _JSON tokens`);
-          if (style === "hash") assert.equal(k.entry.type, "identifier", `${where}: shell allows only identifier tokens`);
+          if (style === "slash" || style === "none") {
+            assert.ok(t.name.endsWith("_JSON"), `${where}: .mjs and .json allow only _JSON tokens`);
+          }
+          if (style === "hash") assert.equal(k.entry.type, "identifier", `${where}: shell and YAML allow only identifier tokens`);
           if (k.entry.when) {
             const inside = blocks.some((b) => b.flag === k.entry.when && b.start < t.line && t.line < b.end);
             assert.ok(inside, `${where}: must sit inside a kit:if ${k.entry.when} block`);
@@ -196,12 +210,10 @@ describe("template tree", () => {
       });
 
       for (const value of [true, false]) {
-        test(`renders with every flag ${value}: no token left, frontmatter closed`, () => {
+        test(`renders with every flag ${value}: no token left, valid frontmatter`, () => {
           const out = miniRender(text, { style, values: examples, flags: allFlags(value) });
           assert.ok(!out.includes("{{"), "a {{ is left after render");
-          if (out.startsWith("---\n")) {
-            assert.match(out, /^---\n[\s\S]*?\n---\n/, "frontmatter never closes");
-          }
+          assert.deepEqual(frontmatterErrors(out), []);
         });
       }
     });
@@ -251,7 +263,9 @@ describe("modules.json", () => {
       assert.ok(["core", "common", "example"].includes(m.tier), `${m.id}: tier`);
       assert.ok(m.title && m.offer, `${m.id}: title and offer`);
       assert.equal(typeof m.default, "boolean", `${m.id}: default`);
-      assert.ok(Array.isArray(m.requires) && Array.isArray(m.files), `${m.id}: requires and files`);
+      for (const k of ["requires", "files", "settings", "postInstall"]) {
+        assert.ok(Array.isArray(m[k]), `${m.id}: ${k} must be an array`);
+      }
       for (const f of [m.when, ...m.files.map((x) => x.when)].filter(Boolean)) {
         assert.ok(flagNames.includes(baseFlag(f)), `${m.id}: unknown flag ${f}`);
       }
@@ -267,10 +281,28 @@ describe("modules.json", () => {
     }
   });
 
+  test("adapt is set exactly on the templates that carry kit:adapt markers", () => {
+    for (const f of registryFiles) {
+      const has = findAdaptMarkers(read(f.template)).markers.length > 0;
+      assert.equal(f.adapt === true, has, `${f.template}: adapt should be ${has}`);
+    }
+  });
+
+  test("no two file entries render to the same target", () => {
+    const targets = registryFiles.map((f) => f.target);
+    assert.deepEqual(targets.filter((t, i) => targets.indexOf(t) !== i), []);
+  });
+
+  test("settings fragments exist", () => {
+    for (const m of registry.modules) {
+      for (const t of m.settings) assert.ok(templates.includes(t), `${m.id}: missing settings ${t}`);
+    }
+  });
+
   test("every template belongs to exactly one module", () => {
     const counts = new Map();
     for (const m of registry.modules) {
-      for (const t of [...m.files.map((f) => f.template), ...(m.settings ?? [])]) {
+      for (const t of [...m.files.map((f) => f.template), ...m.settings]) {
         counts.set(t, (counts.get(t) ?? 0) + 1);
       }
     }

@@ -54,6 +54,7 @@ Your job: review a change with fresh eyes and decide **APPROVE**, **REQUEST_CHAN
 - [ ] If the schema under `{{DB_PATH}}` changed: migration present, seed updated if relevant, rollback note documented
 - [ ] Each migration is classified `additive` or `destructive`; a destructive change is not shipped in the same PR as the code that stops using the old shape
 - [ ] No committed migration was edited
+- [ ] A destructive migration's PR says {{OWNER}} must take a production backup before merge (`AGENTS.md` "Data layer rules")
 <!-- kit:end -->
 <!-- kit:if has.container -->
 
