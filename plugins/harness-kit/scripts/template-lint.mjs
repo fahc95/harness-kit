@@ -150,7 +150,8 @@ export function miniRender(text, { style, values, flags }) {
 
 /**
  * Problems in a rendered file's YAML frontmatter, if it has one: it must close, and each
- * line must be "key: value", "key:" or a "  - item" list entry, with no HTML comment.
+ * line must be a block-style "key: value", "key:" or "- item" (nested by even indentation),
+ * with no HTML comment and no unquoted ": " inside a value.
  */
 export function frontmatterErrors(text) {
   if (!text.startsWith("---\n")) return [];
@@ -161,21 +162,44 @@ export function frontmatterErrors(text) {
   lines.slice(1, close).forEach((line, i) => {
     const n = i + 2;
     if (line.includes("<!--")) errors.push(`line ${n}: HTML comment in frontmatter`);
-    else if (!/^[A-Za-z_][\w-]*:( \S.*)?$/.test(line) && !/^ {2}- \S/.test(line)) {
-      errors.push(`line ${n}: not a "key: value" or "  - item" line`);
-    } else if (/^[\w-]+: .*: /.test(line) && !/^[\w-]+: ["']/.test(line)) {
-      errors.push(`line ${n}: unquoted ": " in a value`);
+    else {
+      const m = line.match(/^((?: {2})*)(- )?(.*)$/);
+      const body = m[3];
+      const keyValue = body.match(/^[A-Za-z_][\w-]*:( (\S.*))?$/);
+      if (!keyValue && !(m[2] && /^\S/.test(body))) {
+        errors.push(`line ${n}: not a "key: value" or "- item" line with even indentation`);
+      } else if (keyValue?.[2] && /: /.test(keyValue[2]) && !/^["']/.test(keyValue[2])) {
+        errors.push(`line ${n}: unquoted ": " in a value`);
+      }
     }
   });
   return errors;
 }
 
-/** Does a value match its vocabulary entry (type pattern, then the entry's own pattern)? */
-export function valueMatches(entry, types, value) {
-  if (entry.type === "json-array") return Array.isArray(value);
+/** The command inside a value or array item: a Bash(...) rule's content, minus its " *". */
+const commandOf = (v) => v.match(/^Bash\((.*?)( \*)?\)$/)?.[1] ?? v;
+
+/**
+ * Does a value fit its vocabulary entry? It must match the type pattern and the entry's own
+ * pattern (or, for an array, each item its itemPattern), and no command in it may match
+ * vocabulary.rejectCommandPatterns (production backstop, and entries bash-guard would block).
+ */
+export function valueMatches(entry, vocabulary, value) {
+  const reject = (vocabulary.rejectCommandPatterns?.patterns ?? []).map((p) => new RegExp(p, "u"));
+  const clean = (cmd) => !reject.some((re) => re.test(commandOf(cmd)));
+  if (entry.type === "json-array") {
+    const item = entry.itemPattern && new RegExp(entry.itemPattern, "u");
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (v) => typeof v === "string" && (!item || item.test(v)) && (!entry.commandItems || clean(v)),
+      )
+    );
+  }
   if (typeof value !== "string") return false;
-  const patterns = [types[entry.type]?.pattern, entry.pattern].filter(Boolean);
-  return patterns.every((p) => new RegExp(p, "u").test(value));
+  const patterns = [vocabulary.types[entry.type]?.pattern, entry.pattern].filter(Boolean);
+  if (!patterns.every((p) => new RegExp(p, "u").test(value))) return false;
+  return entry.type !== "command" || clean(value);
 }
 
 /** The token names a template may use: each vocabulary token, and NAME_JSON for non-arrays. */

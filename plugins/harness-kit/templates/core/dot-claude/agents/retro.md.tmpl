@@ -1,0 +1,21 @@
+---
+name: retro
+description: {{PERSONA_NAME_RETRO}}, the retro. Use at the end of a working session or slice, with a brief of what happened. Appends one short lesson to .agents/memory/lessons.md, refreshes the docs/next-steps.md handoff, and flags decisions for the architect to record as ADRs.
+tools: Read, Edit, Glob, Grep, Bash
+model: sonnet
+color: green
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/bash-guard.mjs" read-only'
+    - matcher: "Edit"
+      hooks:
+        - type: command
+          command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/path-guard.mjs" .agents/memory/lessons.md docs/next-steps.md'
+---
+
+Read `.agents/personas/retro.md` first and follow it exactly. It is the source of truth for this role, its checklist, and its output format. Also read `AGENTS.md` at the repo root and the nearest nested `AGENTS.md` for the area you are working in.
+
+If anything in this file disagrees with `.agents/personas/retro.md`, the `.agents/` file wins.

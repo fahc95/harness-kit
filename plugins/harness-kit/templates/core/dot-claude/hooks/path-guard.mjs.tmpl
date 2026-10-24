@@ -1,0 +1,38 @@
+// PreToolUse hook for Edit/Write: `node path-guard.mjs <dir> [<dir>...]`.
+// Blocks (exit 2) any edit outside the given repo-relative directories.
+import path from "node:path";
+
+const fail = (message) => {
+  process.stderr.write(`${message}\n`);
+  process.exit(2); // Exit 1 would be non-blocking, so every failure path exits 2.
+};
+process.on("uncaughtException", (error) =>
+  fail(`path-guard crashed: ${String(error?.message ?? error)}`),
+);
+process.on("unhandledRejection", (error) => fail(`path-guard crashed: ${error}`));
+
+// Imported dynamically, after the handlers above: a failing static import would exit 1 (fail open).
+const { resolveRepoRoot } = await import("./repo-root.mjs");
+
+process.stdin.setEncoding("utf8");
+let raw = "";
+for await (const chunk of process.stdin) raw += chunk;
+
+let payload;
+try {
+  payload = JSON.parse(raw);
+} catch {
+  fail("Blocked by path-guard: could not parse the hook payload.");
+}
+const filePath = payload?.tool_input?.file_path;
+if (typeof filePath !== "string") fail("Blocked by path-guard: no file_path in the hook payload.");
+
+const root = resolveRepoRoot(payload.cwd);
+const allowedDirs = process.argv.slice(2).map((dir) => path.resolve(root, dir));
+const absPath = path.resolve(root, filePath);
+const inside = allowedDirs.some((dir) => absPath === dir || absPath.startsWith(dir + path.sep));
+if (!inside) {
+  fail(
+    `Blocked by path-guard: ${filePath} is outside ${process.argv.slice(2).join(", ")} (repo root: ${root}). This persona may only edit files there; describe other changes for the caller instead.`,
+  );
+}

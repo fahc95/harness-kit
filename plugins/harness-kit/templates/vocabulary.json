@@ -24,8 +24,23 @@
     },
     "json-array": {
       "pattern": null,
-      "description": "A JSON array, inserted as a literal. Used only in .mjs and .json templates."
+      "description": "A JSON array of strings, inserted as a literal. Its name ends in _JSON and it has no twin. Each item must match the token itemPattern. Used only in .mjs and .json templates."
     }
+  },
+  "rejectCommandPatterns": {
+    "description": "A value is rejected at render time if any command in it (a command token, an item of VERIFY_COMMANDS_JSON or DB_COMMANDS_JSON, or the command inside a Bash(...) rule) matches one of these. The first group is a production backstop (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts); it is not the classifier, so a match means: ask the owner, never allow. The second group is what bash-guard blocks anyway (inline env assignments, git --output), so such an entry could never run. The first-word patterns also match behind one runner word (for example `npx <tool>` or `<runner> exec <tool>`); deeper wrappers such as `bash -c` are not unwrapped, which the command type's no-quotes rule already blocks.",
+    "patterns": [
+      "^(\\S+ (exec |dlx )?)?(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\\b",
+      "^(\\S+ (exec |dlx )?)?(gh|git push|docker push|docker login)\\b",
+      "^(\\S+ (exec |dlx )?)?(fly|flyctl|vercel|netlify|heroku|railway|firebase|wrangler|supabase|aws|gcloud|az)\\b",
+      "(^|[\\s:])(deploy|release|publish|push)(:[\\w-]+)?(\\s|$)",
+      "(^|[\\s:-])remote\\b",
+      "://",
+      "@[\\w-]+\\.[\\w.-]+",
+      "prod",
+      "(^| )[A-Z_]+=",
+      "(^| )--ou"
+    ]
   },
   "tokens": {
     "PROJECT_NAME": {
@@ -158,6 +173,45 @@
       "source": "answers",
       "default": "Sherlock",
       "example": "Researcher"
+    },
+    "VERIFY_COMMANDS_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
+      "description": "The exact check commands (CMD_TYPECHECK, CMD_LINT, CMD_TEST that exist, in that order). bash-guard allows each one exactly, for the read-only and architect profiles. May be empty.",
+      "source": "derived from CMD_TYPECHECK, CMD_LINT and CMD_TEST",
+      "example": [
+        "npm run typecheck",
+        "npm run lint",
+        "npm test"
+      ],
+      "commandItems": true
+    },
+    "DB_COMMANDS_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
+      "when": "has.db",
+      "description": "The exact local-database commands the architect may run (generate, create a migration without applying it, apply to the local database, seed). Never a command that reaches a deployed database.",
+      "source": "detect, then classified and confirmed by the owner",
+      "example": [
+        "npm run db:generate",
+        "npm run db:migrate:local",
+        "npm run db:seed"
+      ],
+      "commandItems": true
+    },
+    "ALLOW_RULES_JSON": {
+      "type": "json-array",
+      "itemPattern": "^Bash\\([A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*( \\*)?\\)$",
+      "description": "permissions.allow entries for .claude/settings.json: git basics plus the local commands in .agents/rules/commands.md. Never a production-reaching command.",
+      "source": "classify, confirmed by the owner",
+      "example": [
+        "Bash(npm test)",
+        "Bash(npm test *)",
+        "Bash(git status)",
+        "Bash(git diff *)",
+        "Bash(git log *)"
+      ],
+      "commandItems": true
     }
   },
   "flags": {

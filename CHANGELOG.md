@@ -9,4 +9,5 @@ All notable changes to harness-kit. Versions follow `plugins/harness-kit/.claude
 - Docs: README, AGENTS.md, design notes and the kit's ADR log.
 - Template contract: `templates/vocabulary.json` (tokens and flags), `docs/templates.md` and ADR-002, enforced by `plugins/harness-kit/scripts/template-lint.test.mjs`.
 - Core templates: `AGENTS.md`, `CLAUDE.md`, the architect, planner, reviewer, retro and researcher personas, the plan, review, retro and feature workflows with their command wrappers, the commands, env-and-secrets and production-parity rules, and memory seeds. Registered as the `core` module in `templates/modules.json`.
+- Guard templates: `bash-guard`, `path-guard`, `repo-root` and `guards.test`, with the Bash allowlists in a generated `guard-profiles.mjs` (exact-match, regex-escaped commands; fails closed), the five sub-agent wrappers, `HOOKS-GUIDE.md`, and a `.claude/settings.json` fragment with the `.env` deny list. The lint test renders the hooks and runs their tests.
 - Repo tooling: `.githooks/pre-push` refuses pushes to `main` (enable with `git config core.hooksPath .githooks`), with tests in CI. Not part of the installed plugin.

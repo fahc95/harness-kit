@@ -2,7 +2,9 @@
 // docs/templates.md in the kit repo) and the registry (templates/modules.json).
 // CI runs it with node --test. Template files end in .tmpl, so they never run here.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -134,6 +136,11 @@ describe("helpers", () => {
     assert.match(frontmatterErrors("---\n<!-- kit:adapt: x -->\n---\n").join(), /HTML comment/);
     assert.match(frontmatterErrors("---\njust text\n---\n").join(), /not a/);
     assert.match(frontmatterErrors("---\ndescription: a: b\n---\n").join(), /unquoted/);
+    const nested = "---\nhooks:\n  PreToolUse:\n    - matcher: \"Bash\"\n      hooks:\n        - type: command\n          command: 'a: b'\n---\n";
+    assert.deepEqual(frontmatterErrors(nested), []);
+    assert.match(frontmatterErrors("---\n key: v\n---\n").join(), /even indentation/);
+    assert.match(frontmatterErrors("---\nk:\n   - x\n---\n").join(), /even indentation/);
+    assert.match(frontmatterErrors("---\nk:\n  key: a: b\n---\n").join(), /unquoted/);
   });
 });
 
@@ -142,21 +149,59 @@ describe("vocabulary", () => {
     for (const [name, entry] of Object.entries(vocabulary.tokens)) {
       assert.ok(vocabulary.types[entry.type], `${name}: unknown type ${entry.type}`);
       assert.ok(entry.description && entry.source, `${name}: description and source required`);
-      assert.ok(valueMatches(entry, vocabulary.types, entry.example), `${name}: bad example`);
+      assert.ok(valueMatches(entry, vocabulary, entry.example), `${name}: bad example`);
       if (entry.default !== undefined) {
-        assert.ok(valueMatches(entry, vocabulary.types, entry.default), `${name}: bad default`);
+        assert.ok(valueMatches(entry, vocabulary, entry.default), `${name}: bad default`);
       }
       if (entry.when) assert.ok(flagNames.includes(entry.when), `${name}: unknown when flag`);
     }
   });
 
   test("DB_PATH can't widen the architect's scope, and OWNER can't break a table", () => {
-    const ok = (name, v) => valueMatches(vocabulary.tokens[name], vocabulary.types, v);
+    const ok = (name, v) => valueMatches(vocabulary.tokens[name], vocabulary, v);
     for (const bad of [".", "./", ".git/", ".claude/", "db/.hidden", "a/../b", "/abs"]) {
       assert.equal(ok("DB_PATH", bad), false, bad);
     }
     assert.equal(ok("DB_PATH", "packages/db/"), true);
     assert.equal(ok("OWNER", "a|b"), false);
+  });
+
+  test("json-array tokens are named NAME_JSON and declare an item pattern", () => {
+    for (const [name, entry] of Object.entries(vocabulary.tokens)) {
+      if (entry.type !== "json-array") continue;
+      assert.match(name, /_JSON$/, name);
+      assert.ok(entry.itemPattern, `${name}: itemPattern`);
+    }
+    assert.equal(valueMatches(vocabulary.tokens.VERIFY_COMMANDS_JSON, vocabulary, ["npm test; rm x"]), false);
+    const allow = (v) => valueMatches(vocabulary.tokens.ALLOW_RULES_JSON, vocabulary, [v]);
+    assert.equal(allow("Bash(npm test *)"), true);
+    assert.equal(allow("Bash(git diff *)"), true);
+    for (const bad of ["Bash(  *)", "Bash( *)", "Bash(*)", "Bash(ssh prod-host)", "Bash(git push origin main)", "Bash(npm run deploy)"]) {
+      assert.equal(allow(bad), false, bad);
+    }
+  });
+
+  test("command values that reach production, or that bash-guard always blocks, are rejected", () => {
+    const db = (v) => valueMatches(vocabulary.tokens.DB_COMMANDS_JSON, vocabulary, [v]);
+    const cmd = (v) => valueMatches(vocabulary.tokens.CMD_TEST, vocabulary, v);
+    for (const bad of [
+      "psql postgres://user@db.example.com/app",
+      "npm run db:push",
+      "npm run migrate:remote",
+      "npx wrangler d1 execute app --remote",
+      "supabase db push",
+      "pulumi up",
+      "npx wrangler d1 execute app",
+      "npm exec aws s3 ls",
+      "npm run deploy:staging",
+      "npm run seed:prod",
+      "NODE_ENV=test npm test",
+      "tsc --outDir x",
+    ]) {
+      assert.equal(db(bad), false, bad);
+      assert.equal(cmd(bad), false, bad);
+    }
+    assert.equal(db("npm run db:migrate:local"), true);
   });
 
   test("flag names follow the grammar", () => {
@@ -316,5 +361,59 @@ describe("modules.json", () => {
       }
     }
     for (const t of templates) assert.equal(counts.get(t), 1, `${t}: listed ${counts.get(t) ?? 0} times`);
+  });
+});
+
+// Render the core hooks and settings with the vocabulary examples into a temp repo, then run
+// the rendered guard tests there: a template that renders but doesn't work fails here.
+describe("rendered core hooks", () => {
+  // Guards against a rendered suite that silently registers nothing (it runs about 100 cases).
+  const MIN_GUARD_TESTS = 60;
+  const renderInto = (root, values, flags) => {
+    for (const f of templates.filter((t) => t.startsWith("core/dot-claude/hooks/"))) {
+      const target = path.join(root, deriveTarget(f));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, miniRender(read(f), { style: "slash", values, flags }));
+    }
+  };
+
+  for (const [name, values, flags] of [
+    ["has.db true", examples, allFlags(true)],
+    ["has.db false", examples, { ...allFlags(true), "has.db": false }],
+    ["no check commands", { ...examples, VERIFY_COMMANDS_JSON: [] }, { ...allFlags(true), "has.checks": false }],
+  ]) {
+    test(`guards.test passes with ${name}`, () => {
+      const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "kit-hooks-"));
+      try {
+        renderInto(root, values, flags);
+        const hooks = path.join(root, ".claude/hooks");
+        for (const f of fs.readdirSync(hooks)) {
+          const check = spawnSync(process.execPath, ["--check", path.join(hooks, f)], { encoding: "utf8" });
+          assert.equal(check.status, 0, `${f}: ${check.stderr}`);
+        }
+        // A child `node --test` must not inherit this runner's context, or it reports to us.
+        const { NODE_TEST_CONTEXT: _drop, ...env } = process.env;
+        const run = spawnSync(process.execPath, ["--test", path.join(hooks, "guards.test.mjs")], {
+          encoding: "utf8",
+          env,
+        });
+        assert.equal(run.status, 0, run.stdout.split("\n").filter((l) => /^not ok|error/.test(l.trim())).join("\n"));
+        assert.match(run.stdout, /# fail 0/);
+        assert.ok(Number(run.stdout.match(/# pass (\d+)/)?.[1]) >= MIN_GUARD_TESTS, "too few guard tests ran");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("the settings fragment renders to JSON with the .env deny list and the allow list", () => {
+    const text = read("core/settings.fragment.json.tmpl");
+    const settings = JSON.parse(miniRender(text, { style: "none", values: examples, flags: allFlags(true) }));
+    assert.deepEqual(settings.permissions.allow, examples.ALLOW_RULES_JSON);
+    assert.equal(settings.permissions.deny.length, 44);
+    for (const verb of ["Read", "Edit"]) {
+      assert.ok(settings.permissions.deny.includes(`${verb}(**/.env)`));
+      assert.ok(settings.permissions.deny.includes(`${verb}(//**/.env)`));
+    }
   });
 });

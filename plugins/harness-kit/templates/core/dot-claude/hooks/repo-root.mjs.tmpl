@@ -1,0 +1,39 @@
+// Shared by the hooks that resolve file paths: which checkout is this edit in?
+// In a worktree session $CLAUDE_PROJECT_DIR stays at the main checkout, while the payload `cwd`
+// is the worktree (or a subdirectory after a `cd`). So walk up from `cwd` to the nearest `.git`,
+// and trust it only if it is the project itself or one of the project's registered git worktrees.
+// Anything else (no cwd, another repo, an unreadable .git) falls back to $CLAUDE_PROJECT_DIR,
+// so a `cd` elsewhere can never widen a persona's scope.
+// Paths are compared with path.resolve, not realpath: symlinked checkouts are unsupported.
+import fs from "node:fs";
+import path from "node:path";
+
+export const resolveRepoRoot = (payloadCwd) => {
+  const fallback = path.resolve(process.env.CLAUDE_PROJECT_DIR ?? process.cwd());
+  if (typeof payloadCwd !== "string" || !path.isAbsolute(payloadCwd)) return fallback;
+  try {
+    let dir = path.resolve(payloadCwd);
+    while (!fs.existsSync(path.join(dir, ".git"))) {
+      const parent = path.dirname(dir);
+      if (parent === dir) return fallback;
+      dir = parent;
+    }
+    if (dir === fallback) return dir;
+    const dotGit = path.join(dir, ".git");
+    if (!fs.statSync(dotGit).isFile()) return fallback;
+    // Git reads only the first line: `gitdir: <path>`, relative to the worktree.
+    const gitdir = fs
+      .readFileSync(dotGit, "utf8")
+      .split("\n")[0]
+      .match(/^gitdir:\s*(.+?)\s*$/)?.[1];
+    if (!gitdir) return fallback;
+    const gitdirAbs = path.resolve(dir, gitdir);
+    // Registered worktree: its admin dir is a direct child of <main>/.git/worktrees, and its
+    // `gitdir` back-pointer names this worktree's .git file. A copied or stale .git file fails this.
+    if (path.dirname(gitdirAbs) !== path.join(fallback, ".git", "worktrees")) return fallback;
+    const backPointer = fs.readFileSync(path.join(gitdirAbs, "gitdir"), "utf8").trim();
+    return path.resolve(gitdirAbs, backPointer) === dotGit ? dir : fallback;
+  } catch {
+    return fallback;
+  }
+};

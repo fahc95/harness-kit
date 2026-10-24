@@ -1,0 +1,52 @@
+// PreToolUse hook for personas with scoped Bash: `node bash-guard.mjs <profile>`.
+// Each profile (guard-profiles.mjs) is an allowlist; anything else is blocked with exit 2, which tells Claude why.
+// The persona prompt says what the role should run; this hook is what makes it true.
+// Fails closed: a bad payload, an unknown profile or a crash all block the call.
+
+const fail = (message) => {
+  process.stderr.write(`${message}\n`);
+  process.exit(2); // Exit 1 would be non-blocking, so every failure path exits 2.
+};
+process.on("uncaughtException", (error) =>
+  fail(`bash-guard crashed: ${String(error?.message ?? error)}`),
+);
+process.on("unhandledRejection", (error) => fail(`bash-guard crashed: ${error}`));
+
+// The profiles live in guard-profiles.mjs, generated from this repo's commands. Imported
+// dynamically, after the handlers above: a failing static import would exit 1 (fail open).
+const { PROFILES } = await import("./guard-profiles.mjs");
+
+// Anything the shell could use to write files, run other commands, or rebuild a
+// blocked word from pieces: separators, pipes, redirects, quotes, escapes, `$`,
+// a lone `&`, `--ou…` (git's --output), and inline env assignments.
+const FORBIDDEN = /[;|<>`\n'"\\$]|(?<!&)&(?!&)|(^|\s)--ou|(^|\s)[A-Z_]+=/;
+
+const profileName = process.argv[2];
+const profile = Object.hasOwn(PROFILES, profileName) ? PROFILES[profileName] : undefined;
+
+const block = (reason) =>
+  fail(
+    `Blocked by bash-guard (${profileName}): ${reason}\nThis persona may only run ${profile?.summary ?? "nothing (unknown profile)"}, optionally chained with &&. Run each from the project root; no cd, pipes, redirects, quotes or env vars.`,
+  );
+
+if (!profile) block(`unknown profile "${profileName}"`); // Fail closed on a typo in the agent file.
+
+process.stdin.setEncoding("utf8");
+let raw = "";
+for await (const chunk of process.stdin) raw += chunk;
+
+let command;
+try {
+  command = JSON.parse(raw).tool_input?.command;
+} catch {
+  block("could not parse the hook payload");
+}
+if (typeof command !== "string") block("no command in the hook payload");
+
+// `2>&1` is harmless only as a whole token; `2>&1foo` would redirect to a file.
+const normalized = command.replace(/(^|\s)2>&1(?=\s|$)/g, " ").trim();
+if (FORBIDDEN.test(normalized)) block(`shell operator, quote or env assignment in \`${command}\``);
+
+for (const part of normalized.split("&&").map((p) => p.trim())) {
+  if (!profile.allowed.some((re) => re.test(part))) block(`\`${part}\` is not on the allowlist`);
+}
