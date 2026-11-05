@@ -121,7 +121,8 @@ const UI_DEPS = ["react", "react-dom", "vue", "svelte", "@sveltejs/kit", "next",
 const RISKY = [".github/workflows/", "Dockerfile", "Containerfile", "fly.toml", "railway.json", "railway.toml", "vercel.json", "netlify.toml", "render.yaml", "Procfile", "deploy/", "infra/", "terraform/", "k8s/", "helm/"];
 const INSTRUCTION_FILES = [
   "AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "GEMINI.md", ".cursorrules", ".cursor/rules", ".windsurfrules",
-  ".clinerules", ".github/copilot-instructions.md", ".agents", ".claude/agents", ".claude/commands",
+  ".clinerules", ".github/copilot-instructions.md", ".agents", ".agents/hooks.json", ".agents/mcp_config.json",
+  ".agents/plugins.json", ".agents/skills.json", ".claude/agents", ".claude/commands",
   ".claude/skills", ".claude/hooks", ".claude/rules", ".claude/settings.json", ".claude/settings.local.json",
 ];
 const HOOK_TOOLS = [".husky", "lefthook.yml", ".lefthook.yml", "lefthook.yaml", ".pre-commit-config.yaml", ".githooks"];
@@ -151,11 +152,17 @@ export function detect(repo, kit = loadKit()) {
   const dbPaths = DB_DIRS.filter((d) => exists(root, d)).map((d) => `${d}/`);
   const container = ["Dockerfile", "Containerfile"].filter((f) => exists(root, f));
   const nested = g.isRepo
-    ? (git(root, "ls-files", "--", "*AGENTS.md", "*CLAUDE.md") ?? "").split("\n").filter((f) => f.includes("/"))
+    ? (git(root, "ls-files", "--", "*AGENTS.md", "*CLAUDE.md", "*GEMINI.md") ?? "").split("\n").filter((f) => f.includes("/"))
     : [];
   const manifest = readJson(root, ".agents/harness.json");
   const uiDeps = UI_DEPS.filter((d) => d in deps);
   const gitFlow = g.isRepo ? detectGitFlow(root, g.remoteBranches) : null;
+  const mcpServers = [
+    ...new Set([
+      ...Object.keys(readJson(root, ".mcp.json")?.mcpServers ?? {}),
+      ...Object.keys(readJson(root, ".agents/mcp_config.json")?.mcpServers ?? {}),
+    ]),
+  ].sort();
 
   return {
     kitVersion: kit.version,
@@ -181,8 +188,8 @@ export function detect(repo, kit = loadKit()) {
       nestedInstructions: nested,
       hookTools: HOOK_TOOLS.filter((f) => exists(root, f)),
       // Project-scoped MCP servers, a hint for the pm module's PM tool. Servers the owner
-      // connected elsewhere (claude.ai connectors, user scope) don't show here.
-      mcpServers: Object.keys(readJson(root, ".mcp.json")?.mcpServers ?? {}).sort(),
+      // connected elsewhere (Plugins Manager, claude.ai connectors, user scope) don't show here.
+      mcpServers,
     },
     suggestions: {
       values: {

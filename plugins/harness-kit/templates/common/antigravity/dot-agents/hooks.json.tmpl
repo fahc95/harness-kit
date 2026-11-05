@@ -1,0 +1,16 @@
+{
+  "harness-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|view_file|read_file|write_file|edit_file|grep_search",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f ./hooks/agy-guard.mjs ] && node ./hooks/agy-guard.mjs || node ./.agents/hooks/agy-guard.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,123 @@
+// Regression tests for the Antigravity PreToolUse guard (.agents/hooks/agy-guard.mjs).
+// Feeds Antigravity's camelCase PreToolUse JSON payload on stdin and checks the JSON decision on stdout.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
+
+const HOOKS_DIR = path.dirname(fileURLToPath(import.meta.url));
+const GUARD = path.join(HOOKS_DIR, "agy-guard.mjs");
+
+// Verify commands configured for this repository.
+const VERIFY_COMMANDS = {{VERIFY_COMMANDS_JSON}};
+// kit:if has.db
+const DB_COMMANDS = {{DB_COMMANDS_JSON}};
+// kit:end
+// kit:if !has.db
+const DB_COMMANDS = [];
+// kit:end
+
+const runGuard = (payload) => {
+  const input = typeof payload === "string" ? payload : JSON.stringify(payload);
+  const r = spawnSync(process.execPath, [GUARD], { input, encoding: "utf8" });
+  assert.equal(r.status, 0, `unexpected exit ${r.status}: ${r.stderr}`);
+  return JSON.parse(r.stdout.trim());
+};
+
+const callTool = (name, args) => runGuard({ toolCall: { name, args }, workspacePaths: ["/repo"] });
+
+describe("agy-guard .env protection", () => {
+  const deniedEnvPaths = [
+    ".env",
+    "/repo/.env",
+    "packages/api/.env.local",
+    ".env.development.local",
+    ".env.development",
+    ".env.dev",
+    ".env.production",
+    ".env.prod",
+    ".env.staging",
+    ".env.test",
+    ".env.bak",
+    ".env.backup",
+  ];
+
+  for (const p of deniedEnvPaths) {
+    test(`denies read_file on ${p}`, () => {
+      const res = callTool("read_file", { Path: p });
+      assert.equal(res.decision, "deny");
+      assert.match(res.reason, /env-and-secrets/);
+    });
+
+    test(`denies edit_file on ${p}`, () => {
+      const res = callTool("edit_file", { Path: p });
+      assert.equal(res.decision, "deny");
+    });
+  }
+
+  for (const allowedPath of [".env.example", ".env.sample", ".env.template", "src/env.ts", "README.md"]) {
+    test(`allows file tools on ${allowedPath}`, () => {
+      assert.equal(callTool("read_file", { Path: allowedPath }).decision, "allow");
+      assert.equal(callTool("edit_file", { Path: allowedPath }).decision, "allow");
+      assert.equal(callTool("grep_search", { SearchPath: allowedPath }).decision, "allow");
+    });
+  }
+
+  for (const cmd of ["cat .env", "head -n 5 /app/.env.local", "cp .env.production /tmp/x", "grep SECRET .env.staging"]) {
+    test(`denies run_command touching .env: ${cmd}`, () => {
+      const res = callTool("run_command", { CommandLine: cmd });
+      assert.equal(res.decision, "deny");
+    });
+  }
+
+  test("allows run_command reading .env.example", () => {
+    assert.equal(callTool("run_command", { CommandLine: "cp .env.example .env.sample" }).decision, "allow");
+  });
+});
+
+describe("agy-guard git and production command rules", () => {
+  for (const cmd of [
+    "git push origin main",
+    "git push -u origin main",
+    "git push origin HEAD:main",
+    "git push origin refs/heads/main",
+    "git commit --no-verify -m test",
+    "git push --no-verify origin feat/x",
+  ]) {
+    test(`denies forbidden git command: ${cmd}`, () => {
+      const res = callTool("run_command", { CommandLine: cmd });
+      assert.equal(res.decision, "deny");
+    });
+  }
+
+  for (const cmd of [
+    "ssh user@example.com",
+    "psql postgres://user@db.example.com/app",
+    "npm run deploy",
+    "npm run db:push",
+    "npx wrangler d1 execute app --remote",
+    "git push -u origin feat/my-branch",
+  ]) {
+    test(`forces owner confirmation on production/remote command: ${cmd}`, () => {
+      const res = callTool("run_command", { CommandLine: cmd });
+      assert.equal(res.decision, "force_ask");
+    });
+  }
+
+  for (const cmd of ["git status", "git diff origin/main...HEAD", "git log -n 5", ...VERIFY_COMMANDS, ...DB_COMMANDS]) {
+    test(`allows safe local command: ${cmd}`, () => {
+      const res = callTool("run_command", { CommandLine: cmd });
+      assert.equal(res.decision, "allow");
+    });
+  }
+});
+
+describe("agy-guard fails closed on malformed payloads", () => {
+  for (const bad of ["", "not json", "null", "[]", "{}", '{"toolCall":{}}', '{"toolCall":{"name":"read_file","args":{}}}']) {
+    test(`denies malformed payload: ${bad}`, () => {
+      const res = runGuard(bad);
+      assert.equal(res.decision, "deny");
+    });
+  }
+});

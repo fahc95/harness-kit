@@ -6,7 +6,7 @@
       "id": "core",
       "tier": "core",
       "title": "Core harness",
-      "offer": "AGENTS.md and CLAUDE.md, the architect, planner, reviewer, retro and researcher personas with their Claude Code sub-agents and guard hooks, the plan, review, feature and retro workflows, rules, memory seeds, and the .env deny list and allow list for .claude/settings.json.",
+      "offer": "AGENTS.md, the architect, planner, reviewer, retro and researcher personas, the plan, review, feature and retro skills (.agents/skills/), cross-cutting rules (.agents/rules/) and memory seeds (.agents/memory/).",
       "default": true,
       "requires": [],
       "when": null,
@@ -16,11 +16,6 @@
           "target": "AGENTS.md",
           "onExisting": "merge",
           "adapt": true
-        },
-        {
-          "template": "core/CLAUDE.md.tmpl",
-          "target": "CLAUDE.md",
-          "onExisting": "merge"
         },
         {
           "template": "core/docs/next-steps.md.tmpl",
@@ -91,111 +86,132 @@
           "adapt": true
         },
         {
-          "template": "core/dot-agents/workflows/feature.md.tmpl",
-          "target": ".agents/workflows/feature.md",
+          "template": "core/dot-agents/skills/feature/SKILL.md.tmpl",
+          "target": ".agents/skills/feature/SKILL.md",
           "onExisting": "kit-new",
           "adapt": true
         },
         {
-          "template": "core/dot-agents/workflows/plan.md.tmpl",
-          "target": ".agents/workflows/plan.md",
+          "template": "core/dot-agents/skills/plan/SKILL.md.tmpl",
+          "target": ".agents/skills/plan/SKILL.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-agents/workflows/retro.md.tmpl",
-          "target": ".agents/workflows/retro.md",
+          "template": "core/dot-agents/skills/retro/SKILL.md.tmpl",
+          "target": ".agents/skills/retro/SKILL.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-agents/workflows/review.md.tmpl",
-          "target": ".agents/workflows/review.md",
+          "template": "core/dot-agents/skills/review/SKILL.md.tmpl",
+          "target": ".agents/skills/review/SKILL.md",
           "onExisting": "kit-new",
           "adapt": true
+        }
+      ],
+      "settings": [],
+      "postInstall": []
+    },
+    {
+      "id": "claude",
+      "tier": "common",
+      "flag": "module.claude",
+      "title": "Claude Code adapter",
+      "offer": "CLAUDE.md, Claude Code sub-agents (.claude/agents/), slash command wrappers (.claude/commands/), path-scoped rules (.claude/rules/), persona guard hooks (.claude/hooks/) with regression tests, and .claude/settings.json permissions (.env deny list and allow list).",
+      "default": true,
+      "requires": [
+        "core"
+      ],
+      "when": null,
+      "files": [
+        {
+          "template": "common/claude/CLAUDE.md.tmpl",
+          "target": "CLAUDE.md",
+          "onExisting": "merge"
         },
         {
-          "template": "core/dot-claude/HOOKS-GUIDE.md.tmpl",
+          "template": "common/claude/dot-claude/HOOKS-GUIDE.md.tmpl",
           "target": ".claude/HOOKS-GUIDE.md",
           "onExisting": "kit-new",
           "adapt": true
         },
         {
-          "template": "core/dot-claude/agents/architect.md.tmpl",
+          "template": "common/claude/dot-claude/agents/architect.md.tmpl",
           "target": ".claude/agents/architect.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/agents/planner.md.tmpl",
+          "template": "common/claude/dot-claude/agents/planner.md.tmpl",
           "target": ".claude/agents/planner.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/agents/researcher.md.tmpl",
+          "template": "common/claude/dot-claude/agents/researcher.md.tmpl",
           "target": ".claude/agents/researcher.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/agents/retro.md.tmpl",
+          "template": "common/claude/dot-claude/agents/retro.md.tmpl",
           "target": ".claude/agents/retro.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/agents/reviewer.md.tmpl",
+          "template": "common/claude/dot-claude/agents/reviewer.md.tmpl",
           "target": ".claude/agents/reviewer.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/commands/feature.md.tmpl",
+          "template": "common/claude/dot-claude/commands/feature.md.tmpl",
           "target": ".claude/commands/feature.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/commands/plan.md.tmpl",
+          "template": "common/claude/dot-claude/commands/plan.md.tmpl",
           "target": ".claude/commands/plan.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/commands/retro.md.tmpl",
+          "template": "common/claude/dot-claude/commands/retro.md.tmpl",
           "target": ".claude/commands/retro.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/commands/review.md.tmpl",
+          "template": "common/claude/dot-claude/commands/review.md.tmpl",
           "target": ".claude/commands/review.md",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/hooks/bash-guard.mjs.tmpl",
+          "template": "common/claude/dot-claude/hooks/bash-guard.mjs.tmpl",
           "target": ".claude/hooks/bash-guard.mjs",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/hooks/guard-profiles.mjs.tmpl",
+          "template": "common/claude/dot-claude/hooks/guard-profiles.mjs.tmpl",
           "target": ".claude/hooks/guard-profiles.mjs",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/hooks/guards.test.mjs.tmpl",
+          "template": "common/claude/dot-claude/hooks/guards.test.mjs.tmpl",
           "target": ".claude/hooks/guards.test.mjs",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/hooks/path-guard.mjs.tmpl",
+          "template": "common/claude/dot-claude/hooks/path-guard.mjs.tmpl",
           "target": ".claude/hooks/path-guard.mjs",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/hooks/repo-root.mjs.tmpl",
+          "template": "common/claude/dot-claude/hooks/repo-root.mjs.tmpl",
           "target": ".claude/hooks/repo-root.mjs",
           "onExisting": "kit-new"
         },
         {
-          "template": "core/dot-claude/rules/env-and-secrets.md.tmpl",
+          "template": "common/claude/dot-claude/rules/env-and-secrets.md.tmpl",
           "target": ".claude/rules/env-and-secrets.md",
           "onExisting": "kit-new",
           "adapt": true
         },
         {
-          "template": "core/dot-claude/rules/production-parity.md.tmpl",
+          "template": "common/claude/dot-claude/rules/production-parity.md.tmpl",
           "target": ".claude/rules/production-parity.md",
           "when": "has.container",
           "onExisting": "kit-new",
@@ -203,8 +219,44 @@
         }
       ],
       "settings": [
-        "core/settings.fragment.json.tmpl"
+        "common/claude/settings.fragment.json.tmpl"
       ],
+      "postInstall": []
+    },
+    {
+      "id": "antigravity",
+      "tier": "common",
+      "flag": "module.antigravity",
+      "title": "Antigravity adapter",
+      "offer": "GEMINI.md with Antigravity sub-agent wiring (define_subagent and invoke_subagent for each persona) and .agents/hooks.json with .agents/hooks/agy-guard.mjs (PreToolUse guard blocking .env access, main pushes, --no-verify and gating production commands) plus regression tests.",
+      "default": true,
+      "requires": [
+        "core"
+      ],
+      "when": null,
+      "files": [
+        {
+          "template": "common/antigravity/GEMINI.md.tmpl",
+          "target": "GEMINI.md",
+          "onExisting": "merge"
+        },
+        {
+          "template": "common/antigravity/dot-agents/hooks.json.tmpl",
+          "target": ".agents/hooks.json",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/antigravity/dot-agents/hooks/agy-guard.mjs.tmpl",
+          "target": ".agents/hooks/agy-guard.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/antigravity/dot-agents/hooks/agy-guard.test.mjs.tmpl",
+          "target": ".agents/hooks/agy-guard.test.mjs",
+          "onExisting": "kit-new"
+        }
+      ],
+      "settings": [],
       "postInstall": []
     },
     {
@@ -237,6 +289,7 @@
         {
           "template": "common/open-pr/dot-claude/skills/open-pr/SKILL.md.tmpl",
           "target": ".claude/skills/open-pr/SKILL.md",
+          "when": "module.claude",
           "onExisting": "kit-new"
         },
         {
@@ -282,7 +335,7 @@
       "tier": "common",
       "flag": "module.pm",
       "title": "PM persona",
-      "offer": "A product manager persona and /pm command that own what gets built and in what order: rank what to work on next, triage ideas and bugs, shape features before the planner, and sync the backlog after each retro. The backlog lives in a PM tool reached through its MCP server (Linear by default; Notion, Jira, GitHub Issues and others work too), or, with no tool, in docs/backlog.md.",
+      "offer": "A product manager persona and /pm skill that own what gets built and in what order: rank what to work on next, triage ideas and bugs, shape features before the planner, and sync the backlog after each retro. The backlog lives in a PM tool reached through its MCP server (Linear by default; Notion, Jira, GitHub Issues and others work too), or, with no tool, in docs/backlog.md.",
       "default": true,
       "requires": [
         "core"
@@ -296,13 +349,20 @@
           "adapt": true
         },
         {
+          "template": "common/pm/dot-agents/skills/pm/SKILL.md.tmpl",
+          "target": ".agents/skills/pm/SKILL.md",
+          "onExisting": "kit-new"
+        },
+        {
           "template": "common/pm/dot-claude/agents/pm.md.tmpl",
           "target": ".claude/agents/pm.md",
+          "when": "module.claude",
           "onExisting": "kit-new"
         },
         {
           "template": "common/pm/dot-claude/commands/pm.md.tmpl",
           "target": ".claude/commands/pm.md",
+          "when": "module.claude",
           "onExisting": "kit-new"
         },
         {

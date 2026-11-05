@@ -47,7 +47,7 @@ Example: `feat(auth): magic-link sign-in`.
 
 ## Step 4: Body
 
-Copy `.github/pull_request_template.md` to a scratch file **outside the repo** (`mktemp`; in Claude Code, the session scratchpad). Fill it in order and delete the template's HTML comments.
+Copy `.github/pull_request_template.md` to a scratch file **outside the repo** (`mktemp`; in Antigravity or Claude Code, the session scratchpad). Fill it in order and delete the template's HTML comments.
 
 - **Summary, The Goal, The Problem, The Change, How:** short and concrete. File paths go in backticks. The Problem cites evidence.
 - **Notes:** optional, but **required with a `Rollback:` line** when the diff touches a risky path (the `RISKY_PATH_ENTRIES` list in `scripts/check-pr.mjs`). Say how to undo the change: revert and redeploy, restore a backup, or a manual step.

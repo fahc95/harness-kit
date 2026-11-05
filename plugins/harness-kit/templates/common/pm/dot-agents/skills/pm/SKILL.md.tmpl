@@ -1,0 +1,24 @@
+---
+name: pm
+description: Run the pm persona ({{PERSONA_NAME_PM}}) in next, intake, shape, sync, groom or roadmap mode to rank work, triage ideas and bugs, shape features, sync after a retro or summarize the roadmap.
+---
+
+# Skill: Product Manager (`pm`)
+
+**Goal**: Run the `pm` persona ({{PERSONA_NAME_PM}}, `.agents/personas/pm.md`) as a sub-agent to decide what to work on next, triage an idea or bug, shape a feature before the planner, sync or groom the backlog, or summarize the roadmap.
+
+---
+
+## Modes (`.agents/personas/pm.md`)
+
+- `next`: rank the top 3 items to work on now.
+- `intake <idea or bug>`: capture it as a backlog item, after checking for duplicates.
+- `shape <item>`: write the product half of an item before the planner plans it.
+- `sync`: close shipped items and file follow-ups, after a retro.
+- `groom`: propose closes, merges and re-ranks.
+- `roadmap`: summarize progress by status.
+
+## Steps
+
+1. **Brief the `pm` persona**: pass the mode and the user's input, plus anything from this session it needs (for `sync`, the follow-ups the retro flagged; for `shape`, what {{OWNER}} already said about the feature).
+2. **Present the report**: show the sub-agent's report to {{OWNER}}. If it asks for approval (for example a run that changes more than five items), ask {{OWNER}} and pass the answer back in a new run.

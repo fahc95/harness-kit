@@ -1,0 +1,15 @@
+{
+  "name": "harness-kit",
+  "displayName": "Harness Kit",
+  "version": "0.3.0",
+  "description": "Installs a provider-agnostic agentic development harness (personas, skills, rules, hooks, memory) into a project, adapted to that project. Ships one user-invoked installer skill and inert templates; registers no agents, hooks or commands globally.",
+  "author": {
+    "name": "Freddy Hz"
+  },
+  "repository": "https://github.com/fahc95/harness-kit",
+  "suggestedPrompts": [
+    "Run /harness-init to install harness-kit into this repository",
+    "Run /harness-init with Antigravity and Claude Code adapters",
+    "Inspect what harness-kit would detect in the current repository"
+  ]
+}

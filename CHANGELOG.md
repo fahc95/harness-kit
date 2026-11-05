@@ -1,6 +1,15 @@
 # Changelog
 
-All notable changes to harness-kit. Versions follow `plugins/harness-kit/.claude-plugin/plugin.json`; bump it in the same PR as the entry.
+All notable changes to harness-kit. Versions follow `plugins/harness-kit/.claude-plugin/plugin.json` and `plugins/harness-kit/plugin.json`; bump both in the same PR as the entry.
+
+## 0.3.0 (unreleased)
+
+- Google Antigravity optimization (ADR-004):
+  - Native Antigravity plugin manifest (`plugins/harness-kit/plugin.json`), kept in sync with `.claude-plugin/plugin.json` by `template-lint.test.mjs`, and provider-agnostic path and scratch resolution in `skills/harness-init/SKILL.md`.
+  - Split provider adapters into selectable `claude` (`module.claude`) and `antigravity` (`module.antigravity`) modules around the universal `core` module (`AGENTS.md` and `.agents/`). `resolveAnswers` requires at least one provider adapter.
+  - New `antigravity` module: `GEMINI.md` (sub-agent wiring via `define_subagent` and `invoke_subagent` for every persona in `.agents/personas/`), `.agents/hooks.json`, and `.agents/hooks/agy-guard.mjs` (plus `agy-guard.test.mjs`), a fail-closed `PreToolUse` guard speaking Antigravity's camelCase JSON contract that blocks `.env` access across file and command tools, blocks `git push` to `main` and `--no-verify`, and gates production-reaching commands with `force_ask`.
+  - Converted core workflow playbooks (`plan`, `review`, `feature`, `retro`) and the `pm` playbook into `.agents/skills/<name>/SKILL.md` with YAML frontmatter so Antigravity discovers `/plan`, `/review`, `/feature`, `/retro` and `/pm` natively as skills and slash commands, while `.claude/commands/*.md` wraps the same files when `claude` is installed.
+  - `detect.mjs` now detects `GEMINI.md`, `.agents/hooks.json`, `.agents/mcp_config.json`, `.agents/plugins.json`, `.agents/skills.json`, and project-scoped MCP servers in `.agents/mcp_config.json`.
 
 ## 0.2.0 (unreleased)
 

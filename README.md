@@ -1,19 +1,19 @@
 # harness-kit
 
-A Claude Code plugin that installs a provider-agnostic agentic development harness into a project: personas, skills, workflows, rules, hooks and memory, adapted to that project.
+A plugin for Google Antigravity and Claude Code that installs a provider-agnostic agentic development harness into a project: personas, skills, rules, guard hooks and memory, adapted to that project.
 
-> **Status: v0.2.0, unreleased.** The templates and the `/harness-kit:harness-init` installer exist. Tests on throwaway repos and a brownfield fixture are next (see [Roadmap](#roadmap)).
+> **Status: v0.3.0, unreleased.** The templates, the `/harness-init` installer, and the Antigravity and Claude Code provider adapters exist. Tests on throwaway repos and a brownfield fixture are next (see [Roadmap](#roadmap)).
 
 ## What it does
 
-The plugin ships one user-invoked skill, `/harness-kit:harness-init`, plus inert templates. It registers no agents, hooks or commands globally. Run inside a target repo, the installer:
+The plugin ships one user-invoked skill, `/harness-init` (`/harness-kit:harness-init` in Claude Code), plus inert templates. It registers no agents, hooks or commands globally. Run inside a target repo, the installer:
 
 1. checks that it runs in a clean worktree on a branch cut from an up-to-date `main`;
 2. detects the stack, the git flow, the commands and any existing agent harness;
 3. runs the project's checks once, as a baseline;
-4. asks which modules to install, and confirms what it detected;
-5. merges the project's existing instructions into a new `AGENTS.md`, and shows the result before writing it;
-6. renders the templates into the repo (`AGENTS.md`, `CLAUDE.md`, `.agents/`, `.claude/`), never overwriting an existing file without the owner's say;
+4. asks which provider adapters (`claude`, `antigravity`, or both) and modules to install, and confirms what it detected;
+5. merges the project's existing instructions into `AGENTS.md` (and `GEMINI.md` / `CLAUDE.md` when selected), and shows the result before writing it;
+6. renders the templates into the repo (`AGENTS.md`, `.agents/`, plus `GEMINI.md` and `.agents/hooks.json` for Antigravity and `CLAUDE.md` and `.claude/` for Claude Code), never overwriting an existing file without the owner's say;
 7. fills in the project-specific sections with the owner;
 8. writes `.agents/harness.json`, a manifest of the kit version and every installed file;
 9. proposes post-install steps such as `git config core.hooksPath .githooks`, without replacing existing hook tooling.
@@ -21,6 +21,22 @@ The plugin ships one user-invoked skill, `/harness-kit:harness-init`, plus inert
 The install lands through a normal PR. The project owns its copy and adapts it.
 
 ## Install
+
+### Antigravity
+
+Register the plugin in `~/.gemini/config/plugins.json` (or `.agents/plugins.json` in a workspace):
+
+```json
+{
+  "entries": [
+    { "path": "/path/to/harness-kit/plugins" }
+  ]
+}
+```
+
+Then, inside the target repo, in a worktree on a fresh branch, run `/harness-init`.
+
+### Claude Code
 
 ```bash
 claude plugin marketplace add fahc95/harness-kit
@@ -36,13 +52,14 @@ Then, inside the target repo, in a worktree on a fresh branch, run `/harness-kit
 
 ```
 harness-kit/
-├── .claude-plugin/marketplace.json   # the marketplace (this repo)
+├── .claude-plugin/marketplace.json   # the Claude Code marketplace (this repo)
 ├── .githooks/pre-push                # repo tooling: refuses pushes to main
 ├── .github/workflows/ci.yml          # validate manifests, run script tests
 ├── docs/design.md                    # why the harness is shaped this way
 ├── docs/decisions.md                 # the kit's own ADR log
 └── plugins/harness-kit/
-    ├── .claude-plugin/plugin.json    # name and version
+    ├── plugin.json                   # Antigravity plugin manifest
+    ├── .claude-plugin/plugin.json    # Claude Code plugin manifest
     ├── scripts/                      # installer scripts and the template lint, each with tests
     │   ├── contract.mjs              # the template contract as code
     │   ├── detect.mjs                # read-only project detection
@@ -53,11 +70,11 @@ harness-kit/
     └── templates/                    # inert templates (docs/templates.md)
         ├── vocabulary.json           # every {{TOKEN}} and kit:if flag
         ├── modules.json              # the module registry
-        ├── core/                     # AGENTS.md, CLAUDE.md, .agents/, .claude/
-        └── common/                   # open-pr, githooks-pre-push, pm, flow-migration
+        ├── core/                     # AGENTS.md, .agents/ (personas, skills, rules, memory)
+        └── common/                   # claude, antigravity, open-pr, githooks-pre-push, pm, flow-migration
 ```
 
-Templates never sit in the plugin's top-level `agents/`, `hooks/` or `commands/` folders, because Claude Code would load those as live components in every project.
+Templates never sit in the plugin's top-level `agents/`, `hooks/`, `rules/` or `commands/` folders, because Antigravity and Claude Code would load those as live components in every project.
 
 ## Roadmap
 
@@ -65,7 +82,7 @@ Templates never sit in the plugin's top-level `agents/`, `hooks/` or `commands/`
 |---|---|
 | 1 | This skeleton: marketplace, plugin manifest, CI, docs |
 | 2 | Core templates, plus `open-pr`, `pre-push` and `flow-migration` (done) |
-| 3 | The `/harness-kit:harness-init` installer and its scripts (done) |
+| 3 | The `/harness-init` installer, `pm` module, and Antigravity + Claude adapters (done) |
 | 4 | Tests on throwaway repos and a brownfield fixture |
 | 5 | First real install on a brownfield project (the v1 finish line) |
 
@@ -73,7 +90,7 @@ The full plan lives in the reference implementation's `docs/plans/2026-10-harnes
 
 ## Requirements
 
-- Claude Code with plugin support
+- Google Antigravity or Claude Code with plugin support
 - Node 22 in the target project's environment (the guard hooks are `.mjs` scripts)
 - git, and the GitHub CLI for the `open-pr` module
 

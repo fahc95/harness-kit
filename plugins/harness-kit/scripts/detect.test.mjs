@@ -127,8 +127,10 @@ describe("detect", () => {
       put(repo, "prisma/schema.prisma", "");
       put(repo, ".github/workflows/ci.yml", "on:\n  push:\n    branches: [main]\n");
       put(repo, "CLAUDE.md", "# old\n");
+      put(repo, "GEMINI.md", "# agy\n");
       put(repo, "packages/api/AGENTS.md", "# api\n");
       put(repo, ".mcp.json", JSON.stringify({ mcpServers: { tracker: {}, docs: {} } }));
+      put(repo, ".agents/mcp_config.json", JSON.stringify({ mcpServers: { linear: {}, docs: {} } }));
       sh(repo, "add", ".");
       sh(repo, "commit", "-q", "-m", "app");
       sh(repo, "push", "-q", "origin", "main");
@@ -160,10 +162,10 @@ describe("detect", () => {
       assert.equal(f["has.ui"], true);
       assert.equal(f["has.container"], true);
       assert.equal(f["has.github"], false);
-      assert.deepEqual(r.existing.instructions, ["CLAUDE.md"]);
+      assert.deepEqual(r.existing.instructions, ["CLAUDE.md", "GEMINI.md", ".agents", ".agents/mcp_config.json"]);
       assert.deepEqual(r.existing.nestedInstructions, ["packages/api/AGENTS.md"]);
       assert.equal(r.existing.harnessManifest, null);
-      assert.deepEqual(r.existing.mcpServers, ["docs", "tracker"]);
+      assert.deepEqual(r.existing.mcpServers, ["docs", "linear", "tracker"]);
     }));
 
   test("dirty trees, stale branches, hooks and a previous install are reported", () =>

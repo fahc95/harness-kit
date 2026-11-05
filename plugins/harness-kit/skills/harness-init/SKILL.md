@@ -1,6 +1,6 @@
 ---
 name: harness-init
-description: Install the harness-kit agentic development harness (AGENTS.md, CLAUDE.md, personas, workflows, rules, guard hooks, memory) into the current repo, adapted to it, on a fresh branch for a PR. Run only when the owner asks for it.
+description: Install the harness-kit agentic development harness (AGENTS.md, GEMINI.md, CLAUDE.md, personas, skills, rules, guard hooks, memory) into the current repo, adapted to it, on a fresh branch for a PR. Run only when the owner asks for it.
 disable-model-invocation: true
 argument-hint: "[path to the target repo, default: current directory]"
 allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/detect.mjs *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render.mjs plan *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render.mjs show *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/manifest.mjs check *) Bash(git status *) Bash(git fetch *) Bash(git config --get *) Bash(git diff *) Bash(git log *)
@@ -12,11 +12,13 @@ Install harness-kit into the target repo (`$ARGUMENTS`, or the current directory
 
 The kit's scripts do the mechanical parts. Never write a rendered file by hand, never edit the kit's templates, and never hand-edit `.agents/harness.json`.
 
-- `node ${CLAUDE_PLUGIN_ROOT}/scripts/detect.mjs --repo <repo>`: read-only report (git state, stack, commands, existing harness, suggestions).
-- `node ${CLAUDE_PLUGIN_ROOT}/scripts/render.mjs plan|show|apply --answers <file> --repo <repo>`: validate the answers and render.
-- `node ${CLAUDE_PLUGIN_ROOT}/scripts/manifest.mjs check|write --answers <file> --repo <repo>`: what's left to do, then the manifest.
+Resolve the plugin root (`<kit-root>`) as `${CLAUDE_PLUGIN_ROOT}` when set (Claude Code), or as the `plugins/harness-kit` directory two levels above this `SKILL.md` file (Antigravity):
 
-Keep the answers in `${CLAUDE_PLUGIN_DATA}/installs/${CLAUDE_SESSION_ID}/answers.json` (create the folder with `mkdir -p`). It is outside the repo, so it never gets committed.
+- `node <kit-root>/scripts/detect.mjs --repo <repo>` ([detect.mjs](../../scripts/detect.mjs)): read-only report (git state, stack, commands, existing harness, suggestions).
+- `node <kit-root>/scripts/render.mjs plan|show|apply --answers <file> --repo <repo>` ([render.mjs](../../scripts/render.mjs)): validate the answers and render.
+- `node <kit-root>/scripts/manifest.mjs check|write --answers <file> --repo <repo>` ([manifest.mjs](../../scripts/manifest.mjs)): what's left to do, then the manifest.
+
+Keep the answers in `${CLAUDE_PLUGIN_DATA}/installs/${CLAUDE_SESSION_ID}/answers.json` when `CLAUDE_PLUGIN_DATA` is set (create the folder with `mkdir -p`), or in a temp folder created with `mktemp -d "${TMPDIR:-/tmp}/harness-kit-XXXXXX"` (or the session's artifact scratch directory in Antigravity). It is outside the repo, so it never gets committed.
 
 ## Hard rules
 
@@ -42,7 +44,7 @@ If the repo has no `origin/main` (`base` is null or `main`), say so: the harness
 
 From the report and the repo itself, build a short picture: ecosystems and package manager, the check commands (`commands.checks`, with any `rejected` reason), database folders and scripts, container files, UI, the GitHub remote, Git Flow evidence, hook tools (husky, lefthook, pre-commit, an existing `core.hooksPath`), and every existing instruction file (`existing.instructions`, `existing.nestedInstructions`). Read those instruction files in full: their rules get merged in step 7.
 
-A foreign harness (`.claude/agents`, `.claude/commands`, `.claude/hooks`, `.cursor/rules` and similar) is replaced only with the owner's approval, file by file.
+A foreign harness (`.claude/agents`, `.claude/commands`, `.claude/hooks`, `.agents/hooks.json`, `.cursor/rules` and similar) is replaced only with the owner's approval, file by file.
 
 ## 3. Baseline checks
 
@@ -52,17 +54,17 @@ Run each detected check command marked `ok` in `commands.checks` once, from the 
 
 Ask in a few short rounds, offering the detected suggestion as the default each time. Use the owner's wording when they correct you.
 
-1. **Modules.** Read `${CLAUDE_PLUGIN_ROOT}/templates/modules.json`. `core` is always installed. Offer each other module by its `offer` text, only when its `when` flag is true, and respect `requires`. `flow-migration` is offered only when the owner confirms the repo uses Git Flow.
+1. **Modules.** Read `<kit-root>/templates/modules.json` ([modules.json](../../templates/modules.json)). `core` is always installed. Ask which provider adapter modules to install (`claude`, `antigravity`, or both; at least one is required, and both are offered by default). Offer each other module by its `offer` text, only when its `when` flag is true, and respect `requires`. `flow-migration` is offered only when the owner confirms the repo uses Git Flow.
 2. **Flags.** Confirm `has.db`, `has.ui`, `has.container`, `has.github` and `flow.gitFlow` with the evidence behind each. The check flags (`has.typecheck`, `has.lint`, `has.test`, `has.checks`) and `module.*` flags are derived; don't ask for them.
-3. **Values.** Read `${CLAUDE_PLUGIN_ROOT}/templates/vocabulary.json` for each token's description and pattern. Ask for `PROJECT_NAME`, `OWNER`, `BRANCH_PREFIX`, and confirm `ENV_PREFIX` (derived from the project name if not set). Confirm the check commands, and with `has.db` the `DB_PATH` and each `DB_COMMANDS_JSON` entry (local database only). With `open-pr`: `GH_REPO`, `GH_ACCOUNT` and `RISKY_PATHS_JSON`. Persona display names default to the vocabulary's `default`; offer to change them in one question.
-4. **PM tool** (only with the `pm` module). Ask where the backlog should live. The default is Linear; Notion, Jira, GitHub Issues or any other tool with an MCP server work too (`existing.mcpServers` lists project-scoped servers as a hint). For a tool, set `has.pmTool` to true, `PM_TOOL` to its name, and `PM_SCOPE` to where this project's items live (a project, team, board or database). Ask for the scope even when the workspace looks dedicated, because the persona filters every query by it. Tell the owner the persona reaches the tool only through its MCP server, signed in with their own OAuth login, and that no token goes in any file. Check that the server is connected in this session: if its tools aren't available, give the owner the steps to connect it (a claude.ai connector, or `claude mcp add`), and go on with the install anyway. If the owner wants no PM tool, set `has.pmTool` to false: the backlog becomes `docs/backlog.md`, which the persona manages as plain Markdown.
-5. **Allow list.** Propose `ALLOW_RULES_JSON` from the local commands found (the checks, install, dev server) plus `Bash(git status)`, `Bash(git diff *)` and `Bash(git log *)`. If you leave it out, the renderer uses the checks plus those three git rules.
+3. **Values.** Read `<kit-root>/templates/vocabulary.json` ([vocabulary.json](../../templates/vocabulary.json)) for each token's description and pattern. Ask for `PROJECT_NAME`, `OWNER`, `BRANCH_PREFIX`, and confirm `ENV_PREFIX` (derived from the project name if not set). Confirm the check commands, and with `has.db` the `DB_PATH` and each `DB_COMMANDS_JSON` entry (local database only). With `open-pr`: `GH_REPO`, `GH_ACCOUNT` and `RISKY_PATHS_JSON`. Persona display names default to the vocabulary's `default`; offer to change them in one question.
+4. **PM tool** (only with the `pm` module). Ask where the backlog should live. The default is Linear; Notion, Jira, GitHub Issues or any other tool with an MCP server work too (`existing.mcpServers` lists project-scoped servers from `.mcp.json` and `.agents/mcp_config.json` as a hint). For a tool, set `has.pmTool` to true, `PM_TOOL` to its name, and `PM_SCOPE` to where this project's items live (a project, team, board or database). Ask for the scope even when the workspace looks dedicated, because the persona filters every query by it. Tell the owner the persona reaches the tool only through its MCP server, signed in with their own OAuth login, and that no token goes in any file. Check that the server is connected in this session: if its tools aren't available, give the owner the steps to connect it (in Antigravity, the Plugins Manager or `.agents/mcp_config.json`; in Claude Code, a claude.ai connector or `claude mcp add`), and go on with the install anyway. If the owner wants no PM tool, set `has.pmTool` to false: the backlog becomes `docs/backlog.md`, which the persona manages as plain Markdown.
+5. **Allow list** (only with the `claude` module). Propose `ALLOW_RULES_JSON` from the local commands found (the checks, install, dev server) plus `Bash(git status)`, `Bash(git diff *)` and `Bash(git log *)`. If you leave it out, the renderer uses the checks plus those three git rules.
 
 Write the answers file:
 
 ```json
 {
-  "modules": ["core", "open-pr", "githooks-pre-push"],
+  "modules": ["core", "claude", "antigravity", "open-pr", "githooks-pre-push"],
   "date": "YYYY-MM-DD",
   "flags": { "has.db": false, "has.ui": true, "has.container": false, "has.github": true, "flow.gitFlow": false },
   "values": { "PROJECT_NAME": "...", "OWNER": "...", "BRANCH_PREFIX": "...", "CMD_TEST": "..." }
@@ -73,17 +75,17 @@ Leave a `CMD_*` value out when the project has no such command, and leave `when`
 
 ## 5. Preview
 
-From the plan, show the owner a table of targets by action: `create`, `unchanged`, `merge` (the kit's version goes to `<file>.kit-new` and you merge it), `kit-new` (an existing file the owner decides on), `skip` and `omit`. Show the settings merge: `conflicts` (the project's value is kept) and `riskyExistingAllow` (existing allow rules that look production-reaching; recommend removing them, but only with approval).
+From the plan, show the owner a table of targets by action: `create`, `unchanged`, `merge` (the kit's version goes to `<file>.kit-new` and you merge it), `kit-new` (an existing file the owner decides on), `skip` and `omit`. When `claude` is selected, show the settings merge: `conflicts` (the project's value is kept) and `riskyExistingAllow` (existing allow rules that look production-reaching; recommend removing them, but only with approval).
 
-Show the proposed `AGENTS.md` and `CLAUDE.md` before writing anything. Get the kit's version with `render.mjs show --target AGENTS.md` (and `CLAUDE.md`). Where the project already has these files, draft the merge (see step 7) and show that instead. Ask the owner to approve, or adjust and preview again.
+Show the proposed `AGENTS.md` (plus `GEMINI.md` if `antigravity` is selected, and `CLAUDE.md` if `claude` is selected) before writing anything. Get the kit's version with `render.mjs show --target AGENTS.md` (and `GEMINI.md` / `CLAUDE.md`). Where the project already has these files, draft the merge (see step 7) and show that instead. Ask the owner to approve, or adjust and preview again.
 
 ## 6. Render
 
-Run `render.mjs apply`. It creates new files, writes `<file>.kit-new` beside existing ones, sets git hook modes and merges the settings fragment into `.claude/settings.json`. Report what it wrote.
+Run `render.mjs apply`. It creates new files, writes `<file>.kit-new` beside existing ones, sets git hook modes and, when `claude` is selected, merges the settings fragment into `.claude/settings.json`. Report what it wrote.
 
 ## 7. Merge and decide existing files
 
-For each `merge` target (for example `AGENTS.md`, `CLAUDE.md`, `docs/next-steps.md`, `docs/backlog.md`, `.github/pull_request_template.md`): the kit's `<file>.kit-new` is the skeleton. Fold every rule, fact and command from the project's existing file into the matching section (project rules, do-not list, stack, layout). Drop nothing silently: list what you dropped or rewrote and why. Rules from other providers' files (`.cursorrules`, `.github/copilot-instructions.md` and similar) belong in `AGENTS.md`; ask whether to delete the old file. Write the result to the target and delete the `.kit-new`.
+For each `merge` target (for example `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `docs/next-steps.md`, `docs/backlog.md`, `.github/pull_request_template.md`): the kit's `<file>.kit-new` is the skeleton. Fold every rule, fact and command from the project's existing file into the matching section (project rules, do-not list, stack, layout). Drop nothing silently: list what you dropped or rewrote and why. Rules from other providers' files (`.cursorrules`, `.github/copilot-instructions.md` and similar) belong in `AGENTS.md`; ask whether to delete the old file. Write the result to the target and delete the `.kit-new`.
 
 For each `kit-new` target, show the diff and ask: take the kit's version, keep the project's, or merge. Then delete the `.kit-new`.
 
@@ -99,7 +101,7 @@ Repeat `manifest.mjs check` until it reports `"done": true`: no markers, no `.ki
 
 ## 9. Verify
 
-Run the rendered harness's tests: the `CMD_HOOK_TESTS` value from the plan (for example `node --test ".claude/hooks/*.test.mjs"`). Rerun the baseline checks and compare with step 3. Report each as passed, failed or "not run: <reason>".
+Run the rendered harness's tests: the `CMD_HOOK_TESTS` value from the plan (for example `node --test ".claude/hooks/*.test.mjs" ".agents/hooks/*.test.mjs"`). Rerun the baseline checks and compare with step 3. Report each as passed, failed or "not run: <reason>".
 
 ## 10. Manifest
 

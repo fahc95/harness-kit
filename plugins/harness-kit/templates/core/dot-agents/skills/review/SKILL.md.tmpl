@@ -1,4 +1,9 @@
-# Workflow: Code Review
+---
+name: review
+description: Review the current diff or branch against main with the reviewer persona ({{PERSONA_NAME_REVIEWER}}). Runs the checks and returns APPROVE, REQUEST_CHANGES or BLOCK. Required before any merge.
+---
+
+# Skill: Code Review
 
 **Goal**: Review a change (the working diff, or a branch against `main`) with the `reviewer` persona ({{PERSONA_NAME_REVIEWER}}) before declaring a task complete or merging. Required before finishing any task.
 
@@ -8,11 +13,21 @@
 
 A review costs 30k to 120k tokens, and a PR often gets several passes, so size each one before briefing {{PERSONA_NAME_REVIEWER}}:
 
-- **Full review (Opus, the persona default)**: application code, CI workflows, hook or guard scripts, `.claude/settings.json`, and any `.claude/agents/` wrapper whose `hooks`, `tools`, `model`, `effort` or `maxTurns` changed.
+<!-- kit:if module.claude -->
+- **Full review (Opus, the persona default in Claude Code)**: application code, CI workflows, hook or guard scripts, `.claude/settings.json`, and any `.claude/agents/` wrapper whose `hooks`, `tools`, `model`, `effort` or `maxTurns` changed.
+<!-- kit:end -->
+<!-- kit:if !module.claude -->
+- **Full review (`Model: "pro"` or `"inherit"` in Antigravity)**: application code, CI workflows, and hook or guard scripts (`.agents/hooks.json`, `.agents/hooks/`).
+<!-- kit:end -->
 <!-- kit:adapt: Add the project's own high-risk paths to the full-review bullet above (schema and migrations, auth, deploy config, container files). -->
-- **Light review (Sonnet, pass `model: sonnet` on the Agent call)**: diffs that are only docs, `.agents/` Markdown or `.claude/` wrappers whose frontmatter is untouched.
+<!-- kit:if module.claude -->
+- **Light review (Sonnet, pass `model: sonnet` on the Agent call in Claude Code; `Model: "flash"` on `invoke_subagent` in Antigravity)**: diffs that are only docs, `.agents/` Markdown or `.claude/` wrappers whose frontmatter is untouched.
+<!-- kit:end -->
+<!-- kit:if !module.claude -->
+- **Light review (`Model: "flash"` on `invoke_subagent`)**: diffs that are only docs or `.agents/` Markdown.
+<!-- kit:end -->
 - **Re-review after fixes**: brief {{PERSONA_NAME_REVIEWER}} with the previous findings and the fix commit only (`git diff <reviewed-sha>..HEAD`). Re-audit just those findings and anything the fix touched, not the whole PR. Aim for at most two passes; a third means the first brief was too thin.
-- **A capped run is not a review**: if {{PERSONA_NAME_REVIEWER}} returns nothing or no verdict (for example it hit `maxTurns`), treat the review as not run, never as an approval, and re-brief with a narrower scope.
+- **A capped run is not a review**: if {{PERSONA_NAME_REVIEWER}} returns nothing or no verdict (for example it hit a turn limit), treat the review as not run, never as an approval, and re-brief with a narrower scope.
 
 ## Steps
 

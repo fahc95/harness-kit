@@ -10,7 +10,7 @@ export const kit = loadKit();
 export const exampleAnswers = (overrides = {}) => {
   const ex = (name) => kit.vocabulary.tokens[name].example;
   return {
-    modules: ["core", "open-pr", "githooks-pre-push", "pm"],
+    modules: ["core", "claude", "antigravity", "open-pr", "githooks-pre-push", "pm"],
     date: "2026-01-15",
     flags: { "has.db": true, "has.ui": true, "has.container": true, "has.github": true, "has.pmTool": true },
     values: Object.fromEntries(

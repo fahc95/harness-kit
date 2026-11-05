@@ -92,11 +92,11 @@ describe("resolveAnswers", () => {
     assert.equal(r.values.CMD_HOOK_TESTS, ex("CMD_HOOK_TESTS"));
     assert.equal(r.values.ENV_PREFIX, ex("ENV_PREFIX"));
     assert.equal(r.values.PERSONA_NAME_PLANNER, kit.vocabulary.tokens.PERSONA_NAME_PLANNER.default);
-    for (const f of ["has.typecheck", "has.lint", "has.test", "has.checks", "module.openPr", "module.prePush"]) {
+    for (const f of ["has.typecheck", "has.lint", "has.test", "has.checks", "module.claude", "module.antigravity", "module.openPr", "module.prePush"]) {
       assert.equal(r.flags[f], true, f);
     }
     assert.equal(r.flags["flow.gitFlow"], false);
-    assert.deepEqual(r.modules, ["core", "open-pr", "githooks-pre-push", "pm"]);
+    assert.deepEqual(r.modules, ["core", "claude", "antigravity", "open-pr", "githooks-pre-push", "pm"]);
   });
 
   test("check flags follow the commands that exist", () => {
@@ -131,8 +131,10 @@ describe("resolveAnswers", () => {
   });
 
   test("CMD_HOOK_TESTS has one glob per installed module that ships tests", () => {
-    const r = resolve({ ...exampleAnswers(), modules: ["core"] });
+    const r = resolve({ ...exampleAnswers(), modules: ["core", "claude"] });
     assert.equal(r.values.CMD_HOOK_TESTS, 'node --test ".claude/hooks/*.test.mjs"');
+    const ra = resolve({ ...exampleAnswers(), modules: ["core", "antigravity"] });
+    assert.equal(ra.values.CMD_HOOK_TESTS, 'node --test ".agents/hooks/*.test.mjs"');
     const mods = kit.registry.modules.filter((m) => m.id !== "flow-migration");
     assert.equal(hookTestsCommand(mods, r.flags), kit.vocabulary.tokens.CMD_HOOK_TESTS.example);
   });
@@ -174,10 +176,24 @@ describe("resolveAnswers", () => {
 
   test("checks the module selection", () => {
     assert.match(errorsFor((a) => (a.modules = ["open-pr"])), /"core" module is required/);
-    assert.match(errorsFor((a) => (a.modules = ["core", "nope"])), /unknown module "nope"/);
-    assert.match(errorsFor((a) => (a.modules = ["core", "flow-migration"])), /requires "open-pr"/);
+    assert.match(errorsFor((a) => (a.modules = ["core"])), /at least one provider adapter/);
+    assert.match(errorsFor((a) => (a.modules = ["core", "claude", "nope"])), /unknown module "nope"/);
+    assert.match(errorsFor((a) => (a.modules = ["core", "claude", "flow-migration"])), /requires "open-pr"/);
     assert.match(errorsFor((a) => (a.flags["has.github"] = false)), /"open-pr" needs has.github/);
-    assert.match(errorsFor((a) => (a.modules = ["core", "open-pr", "flow-migration"])), /needs flow.gitFlow/);
+    assert.match(errorsFor((a) => (a.modules = ["core", "claude", "open-pr", "flow-migration"])), /needs flow.gitFlow/);
+  });
+
+  test("allows Antigravity-only or Claude-only provider selection", () => {
+    const agyOnly = resolve({ ...exampleAnswers(), modules: ["core", "antigravity", "open-pr", "pm"] });
+    assert.equal(agyOnly.flags["module.antigravity"], true);
+    assert.equal(agyOnly.flags["module.claude"], false);
+    const rendered = renderAll(kit, agyOnly);
+    assert.equal(rendered.settings.length, 0);
+    assert.ok(rendered.files.some((f) => f.target === "GEMINI.md" && !f.omitted));
+    assert.ok(rendered.files.some((f) => f.target === ".agents/hooks.json" && !f.omitted));
+    assert.ok(!rendered.files.some((f) => f.target === "CLAUDE.md"));
+    assert.ok(rendered.files.find((f) => f.target === ".claude/skills/open-pr/SKILL.md")?.omitted);
+    assert.ok(rendered.files.find((f) => f.target === ".claude/agents/pm.md")?.omitted);
   });
 
   test("every token value from a full answer set passes the vocabulary", () => {

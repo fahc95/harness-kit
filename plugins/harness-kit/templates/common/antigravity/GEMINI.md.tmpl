@@ -1,0 +1,35 @@
+# GEMINI.md: {{PROJECT_NAME}}
+
+Read `AGENTS.md` at the repo root first. `AGENTS.md` is the provider-agnostic source of truth for how we work in this repo; put anything that applies to every agent there, not here. This file holds only Google Antigravity wiring.
+
+## Antigravity wiring
+
+- The main session is **{{PERSONA_NAME_BUILDER}}**, the builder (see the team table in `AGENTS.md`).
+- Personas live in `.agents/personas/` (`architect`, `planner`, `reviewer`, `retro`, `researcher`, and `pm` when installed). Run them as isolated sub-agents using `define_subagent` and `invoke_subagent` so each role starts with a fresh context and returns a single structured report:
+  - **`planner`** ({{PERSONA_NAME_PLANNER}}): define with `EnableWriteTools: false`, `EnableSubagentTools: false`; invoke with `Model: "pro"` (or `"inherit"`), instructing it to read `.agents/personas/planner.md` and `AGENTS.md`.
+  - **`researcher`** ({{PERSONA_NAME_RESEARCHER}}): invoke the built-in `research` sub-agent (or define with `EnableWriteTools: false`), instructing it to follow `.agents/personas/researcher.md`.
+  - **`reviewer`** ({{PERSONA_NAME_REVIEWER}}): define with `EnableWriteTools: true`, `EnableSubagentTools: false` so it can run git inspection and check commands via `run_command` without editing files; invoke with `Model: "pro"` for full reviews or `Model: "flash"` for docs-only diffs (`.agents/skills/review/SKILL.md`).
+<!-- kit:if has.db -->
+  - **`architect`** ({{PERSONA_NAME_ARCHITECT}}): define with `EnableWriteTools: true`, `EnableSubagentTools: false`; invoke with `Model: "pro"`. It may edit only `.agents/memory/decisions.md` and `{{DB_PATH}}`, and run only read-only git, check and local database commands.
+<!-- kit:end -->
+<!-- kit:if !has.db -->
+  - **`architect`** ({{PERSONA_NAME_ARCHITECT}}): define with `EnableWriteTools: true`, `EnableSubagentTools: false`; invoke with `Model: "pro"`. It may edit only `.agents/memory/decisions.md` and run only read-only git and check commands.
+<!-- kit:end -->
+  - **`retro`** ({{PERSONA_NAME_RETRO}}): define with `EnableWriteTools: true`, `EnableSubagentTools: false`; invoke with `Model: "flash"`. It may edit only `.agents/memory/lessons.md` and `docs/next-steps.md`.
+<!-- kit:if module.pm -->
+  - **`pm`** ({{PERSONA_NAME_PM}}): wraps `.agents/personas/pm.md`, and `/pm <mode>` (`.agents/skills/pm/SKILL.md`) runs it with `Model: "flash"`. With an external PM tool, define with `EnableWriteTools: false`, `EnableMCPTools: true` (connect the tool's MCP server with your own OAuth login in the Plugins Manager, never a token in a tracked file). With `docs/backlog.md`, define with `EnableWriteTools: true` and edit only `docs/backlog.md`.
+<!-- kit:end -->
+- Skills in `.agents/skills/<name>/SKILL.md` are discovered natively by Antigravity and provide both semantic activation and slash commands (`/plan`, `/review`, `/feature`, `/retro`).
+<!-- kit:if module.pm -->
+- The `pm` skill (`.agents/skills/pm/SKILL.md`) provides `/pm <mode>` (`next`, `intake`, `shape`, `sync`, `groom`, `roadmap`).
+<!-- kit:end -->
+<!-- kit:if module.openPr -->
+- The `open-pr` skill (`.agents/skills/open-pr/SKILL.md`) provides `/open-pr` (run only once {{OWNER}} asks for a PR). Skill scripts live in `.agents/skills/<name>/scripts/` and are run by a repo-relative path from `git rev-parse --show-toplevel`.
+<!-- kit:end -->
+- Rules in `AGENTS.md` (and nested `AGENTS.md` files) and `.agents/rules/*.md` are discovered natively by Antigravity.
+- Lifecycle hooks in `.agents/hooks.json` run `.agents/hooks/agy-guard.mjs` on `PreToolUse` (`run_command`, `view_file`, `read_file`, `write_file`, `edit_file`, `grep_search`). The guard fails closed:
+  - Denies reading, editing, searching or printing `.env` and `.env.*` files (except `.env.example`, `.env.sample`, `.env.template`), enforcing `.agents/rules/env-and-secrets.md`.
+  - Denies `git push` to `main` and `--no-verify`.
+  - Returns `decision: "force_ask"` on production-reaching commands so Antigravity always prompts {{OWNER}} before running them.
+  - Regression tests live in `.agents/hooks/agy-guard.test.mjs` (`{{CMD_HOOK_TESTS}}`); run them after any guard change.
+- Edit behavior in `.agents/`, never in provider wrappers. Memory lives in `.agents/memory/` (decisions, lessons, learning log).

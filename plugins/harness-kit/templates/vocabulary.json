@@ -28,7 +28,7 @@
     }
   },
   "rejectCommandPatterns": {
-    "description": "A value is rejected at render time if any command in it (a command token, an item of VERIFY_COMMANDS_JSON or DB_COMMANDS_JSON, or the command inside a Bash(...) rule) matches one of these. The production list is a backstop (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts); it is not the classifier, so a match means: ask the owner, never allow. The blockedByGuard list is what bash-guard blocks anyway (inline env assignments, git --output), so such an entry could never run. The first-word patterns also match behind one runner word (for example `npx <tool>` or `<runner> exec <tool>`); deeper wrappers such as `bash -c` are not unwrapped, which the command type's no-quotes rule already blocks. The installed .claude/hooks/guards.test.mjs carries a copy of the production list (minus host names the kit lint keeps out of templates); the kit lint checks the two stay in sync.",
+    "description": "A value is rejected at render time if any command in it (a command token, an item of VERIFY_COMMANDS_JSON or DB_COMMANDS_JSON, or the command inside a Bash(...) rule) matches one of these. The production list is a backstop (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts); it is not the classifier, so a match means: ask the owner, never allow. The blockedByGuard list is what bash-guard blocks anyway (inline env assignments, git --output), so such an entry could never run. The first-word patterns also match behind one runner word (for example `npx <tool>` or `<runner> exec <tool>`); deeper wrappers such as `bash -c` are not unwrapped, which the command type's no-quotes rule already blocks. The installed .claude/hooks/guards.test.mjs and .agents/hooks/agy-guard.mjs carry a copy of the production list (minus host names the kit lint keeps out of templates); the kit lint checks they stay in sync.",
     "production": [
       "^(\\S+ (exec |dlx )?)?(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\\b",
       "^(\\S+ (exec |dlx )?)?(gh|git push|docker push|docker login)\\b",
@@ -116,9 +116,9 @@
     },
     "CMD_HOOK_TESTS": {
       "type": "string",
-      "description": "The command that runs the harness's own script tests: one quoted glob per installed module that ships tests (.claude/hooks for core, .agents/skills/*/scripts for skills such as open-pr, .githooks for the pre-push guard).",
+      "description": "The command that runs the harness's own script tests: one quoted glob per installed module that ships tests (.claude/hooks for claude, .agents/hooks for antigravity, .agents/skills/*/scripts for skills such as open-pr, .githooks for the pre-push guard).",
       "source": "render",
-      "example": "node --test \".claude/hooks/*.test.mjs\" \".agents/skills/*/scripts/*.test.mjs\" \".githooks/*.test.mjs\""
+      "example": "node --test \".claude/hooks/*.test.mjs\" \".agents/hooks/*.test.mjs\" \".agents/skills/*/scripts/*.test.mjs\" \".githooks/*.test.mjs\""
     },
     "DB_PATH": {
       "type": "path",
@@ -187,7 +187,7 @@
     "VERIFY_COMMANDS_JSON": {
       "type": "json-array",
       "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
-      "description": "The exact check commands (CMD_TYPECHECK, CMD_LINT, CMD_TEST that exist, in that order). bash-guard allows each one exactly, for the read-only and architect profiles. May be empty.",
+      "description": "The exact check commands (CMD_TYPECHECK, CMD_LINT, CMD_TEST that exist, in that order). bash-guard and agy-guard allow each one, for the read-only and architect profiles. May be empty.",
       "source": "derived from CMD_TYPECHECK, CMD_LINT and CMD_TEST",
       "example": [
         "npm run typecheck",
@@ -298,6 +298,14 @@
     "has.checks": {
       "description": "At least one of has.typecheck, has.lint and has.test.",
       "source": "derived"
+    },
+    "module.claude": {
+      "description": "The claude adapter module is installed.",
+      "source": "answers"
+    },
+    "module.antigravity": {
+      "description": "The antigravity adapter module is installed.",
+      "source": "answers"
     },
     "module.openPr": {
       "description": "The open-pr module is installed.",
