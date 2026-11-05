@@ -11,7 +11,7 @@ Why the harness this kit installs is shaped the way it is. Each note is a generi
 
 ## D2. Roster: role IDs, the main session builds, one ADR author [ADR-025]
 
-- Files, hooks and workflows reference role IDs (`architect`, `planner`, `reviewer`, `retro`, `researcher`, ...). Friendly names live only in the team table and the persona prompts.
+- Files, hooks and workflows reference role IDs (`architect`, `planner`, `reviewer`, `retro`, `researcher`, `pm`, ...). Friendly names live only in the team table and the persona prompts.
 - There is no builder sub-agent. The main session implements approved plans and orchestrates, because it holds the context and can talk with the owner.
 - Teaching needs the conversation, so the mentor is a skill in the main session, not a persona.
 - Personas settle what the repo, accepted ADRs and sensible defaults already settle, and ask only when the call is genuinely the owner's.
@@ -60,3 +60,10 @@ Why the harness this kit installs is shaped the way it is. Each note is a generi
 
 - `decisions.md`, `lessons.md` and similar logs only grow. Agents grep them for the topic and read only the matching entries; they never read a whole log.
 - An index (one line per ADR) is a planned follow-up for when grep isn't enough.
+
+## D10. Open work has one system of record, owned by a PM persona [ADR-041]
+
+- Every persona above answers how or checks correctness. The `pm` persona owns what and why, in what order: it ranks the next work, triages ideas and bugs, shapes a feature's product half before the planner, and syncs the backlog after each retro.
+- Open work lives only in the backlog. The repo keeps code, plans, ADRs and lessons; `docs/next-steps.md` is the session handoff and points at the backlog instead of listing open work.
+- The backlog is an external PM tool reached through its MCP server with the owner's OAuth login, never an API key, and every query is scoped to the project, because workspaces are often shared. Without a tool, it is a Markdown file in the repo with stable IDs.
+- The persona never writes code or records. Single-item changes are autonomous; a run that changes more than five items needs the owner's approval. It archives rather than deletes.

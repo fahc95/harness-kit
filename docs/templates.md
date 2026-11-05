@@ -46,8 +46,17 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 
 1. Write the file under the module root, ending in `.tmpl`, from a reference-implementation file. Strip reference names and stack; use tokens, `kit:if` and `kit:adapt`.
 2. Add any new token or flag to `vocabulary.json`. Every entry must be used: the lint test rejects dead ones, so add an entry in the same PR as its first use.
-3. List the file in its module in `modules.json`, with its `target` (the derived path), `onExisting` (`merge`, `kit-new` or `skip`), `when` if the file depends on a flag, `adapt: true` if it carries `kit:adapt` markers, and `mode` only for `.githooks/` files.
+3. List the file in its module in `modules.json`, with its `target` (the derived path), `onExisting` (`merge`, `kit-new` or `skip`; see Rendering below), `when` if the file depends on a flag, `adapt: true` if it carries `kit:adapt` markers, and `mode` only for `.githooks/` files.
 4. A settings fragment (`settings.fragment.json.tmpl`) is listed under the module's `settings`, not `files`: the installer merges it into `.claude/settings.json` instead of copying it.
 5. `postInstall` lists commands the installer proposes after writing the files. Each one runs only with the owner's approval, and never silently replaces existing state: for `git config core.hooksPath .githooks`, the installer first reads the current value, and if it is set to something else (husky, lefthook), it shows that and asks instead of overwriting it.
 6. A module that templates can gate on gets a `flag` (`module.<name>`) in `modules.json` and the same flag in `vocabulary.json`. The lint test checks they pair up.
 7. Run `node --test "plugins/**/*.test.mjs"`. It also renders each module into a temp repo, the way the installer will, and runs the rendered tests there.
+
+## Rendering
+
+`plugins/harness-kit/scripts/render.mjs` implements this contract; `render.test.mjs` tests it, and the lint test renders every template with it. ADR-003 has the install semantics:
+
+- Answers set only detected and owner-confirmed values. The renderer derives `KIT_VERSION`, `DATE`, `DATE_YM`, `CMD_CHECKS`, `CMD_HOOK_TESTS`, `VERIFY_COMMANDS_JSON`, the `has.typecheck`, `has.lint`, `has.test` and `has.checks` flags (from which `CMD_*` values are set) and the `module.*` flags (from the selected modules).
+- An existing target is never overwritten. `merge` and `kit-new` write the kit's version to `<target>.kit-new`; `skip` keeps the file.
+- Settings fragments merge into `.claude/settings.json`: arrays gain missing items, and a differing scalar keeps the project's value and is reported.
+- `manifest.mjs` writes `.agents/harness.json` only once no `kit:adapt` marker, `.kit-new` file or missing target remains.

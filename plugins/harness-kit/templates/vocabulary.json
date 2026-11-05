@@ -176,6 +176,14 @@
       "default": "Sherlock",
       "example": "Researcher"
     },
+    "PERSONA_NAME_PM": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the pm (product manager) persona.",
+      "source": "answers",
+      "default": "Medici",
+      "example": "PM"
+    },
     "VERIFY_COMMANDS_JSON": {
       "type": "json-array",
       "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
@@ -246,6 +254,20 @@
         "Dockerfile",
         "deploy/"
       ]
+    },
+    "PM_TOOL": {
+      "type": "string",
+      "when": "has.pmTool",
+      "description": "The PM tool that holds the backlog, reached through its MCP server. The installer suggests Linear; Notion, Jira, GitHub Issues and others work the same way. Without a tool (has.pmTool false) the backlog is docs/backlog.md.",
+      "source": "answers",
+      "example": "Linear"
+    },
+    "PM_SCOPE": {
+      "type": "string",
+      "when": "has.pmTool",
+      "description": "Where this project's items live in the PM tool (a project, team, board or database), so the pm persona never touches other projects' items in a shared workspace.",
+      "source": "answers",
+      "example": "the Example App project in team ENG"
     }
   },
   "flags": {
@@ -285,6 +307,10 @@
       "description": "The githooks-pre-push module is installed.",
       "source": "answers"
     },
+    "module.pm": {
+      "description": "The pm module is installed.",
+      "source": "answers"
+    },
     "has.github": {
       "description": "origin is a GitHub repo.",
       "source": "detect"
@@ -292,6 +318,10 @@
     "flow.gitFlow": {
       "description": "The repo uses Git Flow (a long-lived dev branch promoted to main).",
       "source": "detect, confirmed by the owner"
+    },
+    "has.pmTool": {
+      "description": "The backlog lives in an external PM tool reached through its MCP server. False means it lives in docs/backlog.md.",
+      "source": "answers"
     }
   }
 }

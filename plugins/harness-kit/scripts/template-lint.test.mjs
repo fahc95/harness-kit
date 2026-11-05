@@ -484,6 +484,41 @@ describe("rendered common modules", () => {
       assert.ok(passed >= 7, `only ${passed} pre-push tests ran`);
     }));
 
+  test("pm with a PM tool: MCP tools inherited, no file writes, no backlog file", () =>
+    withTempRepo((root) => {
+      renderModule("pm", root, examples, allFlags(true));
+      const wrapper = fs.readFileSync(path.join(root, ".claude/agents/pm.md"), "utf8");
+      assert.doesNotMatch(wrapper, /^tools:/m, "a tools list would cut off the PM tool's MCP server");
+      assert.match(wrapper, /^disallowedTools: Write, Edit, NotebookEdit$/m);
+      assert.match(wrapper, /bash-guard\.mjs" read-only/);
+      assert.doesNotMatch(wrapper, /path-guard/);
+      assert.ok(!fs.existsSync(path.join(root, "docs/backlog.md")));
+      const persona = fs.readFileSync(path.join(root, ".agents/personas/pm.md"), "utf8");
+      assert.match(persona, new RegExp(`scoped to \\*\\*${escapeRegExp(examples.PM_SCOPE)}\\*\\*`));
+      assert.doesNotMatch(persona, /docs\/backlog\.md/);
+    }));
+
+  test("pm without a PM tool: Edit only on docs/backlog.md, which path-guard allows", () =>
+    withTempRepo((root) => {
+      const flags = { ...allFlags(true), "has.pmTool": false };
+      renderModule("core", root, examples, flags);
+      renderModule("pm", root, examples, flags);
+      const wrapper = fs.readFileSync(path.join(root, ".claude/agents/pm.md"), "utf8");
+      assert.match(wrapper, /^tools: Read, Edit, Glob, Grep, Bash$/m);
+      assert.doesNotMatch(wrapper, /disallowedTools/);
+      const guard = wrapper.match(/path-guard\.mjs" (.+)'$/m);
+      assert.equal(guard?.[1], "docs/backlog.md");
+      assert.match(fs.readFileSync(path.join(root, "docs/backlog.md"), "utf8"), /^\*\*Next ID:\*\* B-1$/m);
+      const run = (file) =>
+        spawnSync(process.execPath, [path.join(root, ".claude/hooks/path-guard.mjs"), "docs/backlog.md"], {
+          input: JSON.stringify({ cwd: root, tool_name: "Edit", tool_input: { file_path: path.join(root, file) } }),
+          encoding: "utf8",
+          env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+        }).status;
+      assert.equal(run("docs/backlog.md"), 0);
+      assert.equal(run("docs/next-steps.md"), 2);
+    }));
+
   test("flow-migration: the runbook lands under docs/plans with the install month", () =>
     withTempRepo((root) => {
       renderModule("flow-migration", root, examples, allFlags(true));

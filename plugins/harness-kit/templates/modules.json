@@ -278,6 +278,45 @@
       ]
     },
     {
+      "id": "pm",
+      "tier": "common",
+      "flag": "module.pm",
+      "title": "PM persona",
+      "offer": "A product manager persona and /pm command that own what gets built and in what order: rank what to work on next, triage ideas and bugs, shape features before the planner, and sync the backlog after each retro. The backlog lives in a PM tool reached through its MCP server (Linear by default; Notion, Jira, GitHub Issues and others work too), or, with no tool, in docs/backlog.md.",
+      "default": true,
+      "requires": [
+        "core"
+      ],
+      "when": null,
+      "files": [
+        {
+          "template": "common/pm/dot-agents/personas/pm.md.tmpl",
+          "target": ".agents/personas/pm.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "common/pm/dot-claude/agents/pm.md.tmpl",
+          "target": ".claude/agents/pm.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/pm/dot-claude/commands/pm.md.tmpl",
+          "target": ".claude/commands/pm.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/pm/docs/backlog.md.tmpl",
+          "target": "docs/backlog.md",
+          "when": "!has.pmTool",
+          "onExisting": "merge",
+          "adapt": true
+        }
+      ],
+      "settings": [],
+      "postInstall": []
+    },
+    {
       "id": "flow-migration",
       "tier": "common",
       "title": "Git Flow to GitHub Flow migration",

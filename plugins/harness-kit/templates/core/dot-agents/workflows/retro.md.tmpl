@@ -16,4 +16,11 @@
 
 3. **Promote decisions:** for each decision {{PERSONA_NAME_RETRO}} flags, run the `architect` persona ({{PERSONA_NAME_ARCHITECT}}) in Decide mode to append the ADR as `Proposed`.
 
+<!-- kit:if module.pm -->
+4. **Sync the backlog:** run the `pm` persona ({{PERSONA_NAME_PM}}) in `sync` mode with the follow-ups from the brief's **Open** list. It closes shipped items and files the follow-ups.
+
+5. **Summarize:** show {{OWNER}} the lesson, the handoff changes, the backlog changes, and any proposed ADRs. {{OWNER}} accepts or edits the ADRs; commit the memory changes with the session's last PR or as their own small PR.
+<!-- kit:end -->
+<!-- kit:if !module.pm -->
 4. **Summarize:** show {{OWNER}} the lesson, the handoff changes, and any proposed ADRs. {{OWNER}} accepts or edits the ADRs; commit the memory changes with the session's last PR or as their own small PR.
+<!-- kit:end -->

@@ -2,7 +2,16 @@
 
 All notable changes to harness-kit. Versions follow `plugins/harness-kit/.claude-plugin/plugin.json`; bump it in the same PR as the entry.
 
-## 0.1.0 (unreleased)
+## 0.2.0 (unreleased)
+
+- The `/harness-kit:harness-init` installer skill (`skills/harness-init/SKILL.md`): checks for a clean, fresh branch off an up-to-date `main`, detects the project, runs baseline checks, asks for modules and answers, previews `AGENTS.md` and `CLAUDE.md`, renders, merges existing files, resolves every `kit:adapt` marker with the owner, writes the manifest and proposes post-install steps.
+- `scripts/render.mjs`: the template renderer (`plan`, `show`, `apply`). Validates answers against `vocabulary.json`, including `rejectCommandPatterns`, derives the computed tokens and flags, renders `kit:if` blocks in all three comment styles, merges settings fragments into `.claude/settings.json`, and never overwrites an existing file (the kit's version goes to `<file>.kit-new`). ADR-003.
+- `scripts/detect.mjs`: read-only detection of git state, package manager, check and database commands, database, container, UI, GitHub remote, Git Flow, hook tools and existing instructions.
+- `scripts/manifest.mjs`: writes `.agents/harness.json` with the kit version, modules, resolved values and flags, and `rendered` and `installed` sha256 hashes per file. Refuses while `kit:adapt` markers, `.kit-new` files or missing targets remain.
+- `pm` module: a product manager persona (`.agents/personas/pm.md`), its Claude sub-agent and a `/pm` command. It owns what gets built and in what order, in six modes: `next`, `intake`, `shape`, `sync`, `groom` and `roadmap`. The backlog lives in a PM tool the owner picks at install, reached through its MCP server (the installer suggests Linear; Notion, Jira, GitHub Issues and others work too) and scoped to one project. With no tool, it lives in `docs/backlog.md`, and path-guard lets the persona edit only that file. When installed, the retro workflow syncs the backlog, the plan loop shapes features first, and `docs/next-steps.md` stays a handoff that points at the backlog. New tokens `PERSONA_NAME_PM`, `PM_TOOL` and `PM_SCOPE`, and flags `module.pm` and `has.pmTool`. `detect.mjs` lists project-scoped MCP servers as a hint.
+- `scripts/contract.mjs`: the contract helpers, shared by the renderer, the detector and the template lint, so the lint now checks the installer's own renderer.
+
+## 0.1.0
 
 - Marketplace manifest (`.claude-plugin/marketplace.json`) and plugin manifest (`plugins/harness-kit/.claude-plugin/plugin.json`).
 - CI: `claude plugin validate --strict` for both manifests and `node --test`.

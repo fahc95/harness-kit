@@ -31,6 +31,9 @@ The same file holds `permissions.deny` for Read and Edit on `.env` files at any 
 | `bash-guard.mjs architect` | architect | The read-only commands |
 | `path-guard.mjs <paths>` | architect (`.agents/memory/decisions.md`), retro (`.agents/memory/lessons.md`, `docs/next-steps.md`) | Edit and Write (retro has only Edit) only inside the listed paths, resolved against the session's checkout |
 <!-- kit:end -->
+<!-- kit:if module.pm -->
+| `bash-guard.mjs read-only`, plus `path-guard.mjs docs/backlog.md` when the backlog lives in the repo | pm | The read-only commands; Edit only on `docs/backlog.md` |
+<!-- kit:end -->
 
 The profiles live in `.claude/hooks/guard-profiles.mjs`, which is the source of truth; this table is a summary. harness-kit generated them from this repo's commands; edit that file to change them. Commands match exactly, so `<test command> some-file` is blocked unless that exact line is listed. Every profile also rejects shell metacharacters (separators, pipes, redirects, quotes, `$`, backslashes), inline env assignments and git's `--output`; only `&&` chaining is allowed. The planner and researcher have no Bash tool at all.
 <!-- kit:if module.prePush -->
