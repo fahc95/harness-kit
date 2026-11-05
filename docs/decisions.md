@@ -42,3 +42,24 @@ Append-only ADR log for decisions about the kit itself. Decisions about the harn
 **Consequences**:
 - Easier: Phase 3's render script has a fixed contract, and every Phase 2 PR is checked mechanically without it.
 - Harder: a new token or flag needs a vocabulary entry in the same PR as its first use.
+
+---
+
+## ADR-003: The Installer Never Overwrites a File, and the Manifest Keeps Two Hashes
+**Date**: 2026-11-05
+**Status**: Proposed
+
+**Context**: ADR-002 fixes how templates render, but not what happens when a target file already exists, how settings fragments land, or what `.agents/harness.json` records. Phase 3 needs all three, and a later sync needs to tell kit changes from project changes.
+
+**Decision**:
+1. `render.mjs` never overwrites an existing file. For `onExisting: merge` and `kit-new`, it writes the kit's version beside the file as `<target>.kit-new`. The installer skill merges `merge` targets with the owner, and asks the owner about each `kit-new` target. `skip` keeps the file. A file identical to the render is `unchanged`.
+2. Settings fragments merge into `.claude/settings.json` key by key: arrays gain the fragment's missing items, and where a scalar differs the project's value stays and the clash is shown. Existing allow rules that match the production list are shown, never removed silently.
+3. Answers hold only detected and owner-confirmed values. The renderer derives `KIT_VERSION`, `DATE`, `DATE_YM`, `CMD_CHECKS`, `CMD_HOOK_TESTS`, `VERIFY_COMMANDS_JSON`, the check flags and the `module.*` flags, and rejects answers that try to set them.
+4. `.agents/harness.json` records the kit version, modules, the resolved values and flags, and per file a `rendered` hash (the kit's output) and an `installed` hash (the file at install). The manifest is written only when no `kit:adapt` marker, `.kit-new` file or missing target remains.
+5. The contract helpers live in `scripts/contract.mjs`, shared by the renderer and the template lint.
+
+**Alternatives considered**: overwrite with a backup (a silent change to a file the owner didn't review); a staging folder (harder to diff beside the original); one hash per file (a sync couldn't tell an adapted file from a kit change without re-rendering and diffing); storing only the answers (a sync would re-derive values with newer kit code).
+
+**Consequences**:
+- Easier: a brownfield install can't lose project content; a sync can re-render the old version from the stored values and compare both hashes.
+- Harder: the skill must clear every `.kit-new` file before the manifest can be written. The manifest holds the project's commands and names, which is fine in a repo but must never hold secrets.

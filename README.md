@@ -2,7 +2,7 @@
 
 A Claude Code plugin that installs a provider-agnostic agentic development harness into a project: personas, skills, workflows, rules, hooks and memory, adapted to that project.
 
-> **Status: v0.1.0, unreleased.** The marketplace, the plugin manifest and the templates exist. The `/harness-kit:harness-init` installer is next (see [Roadmap](#roadmap)). Installing the plugin today adds nothing you can run.
+> **Status: v0.2.0, unreleased.** The templates and the `/harness-kit:harness-init` installer exist. Tests on throwaway repos and a brownfield fixture are next (see [Roadmap](#roadmap)).
 
 ## What it does
 
@@ -11,10 +11,12 @@ The plugin ships one user-invoked skill, `/harness-kit:harness-init`, plus inert
 1. checks that it runs in a clean worktree on a branch cut from an up-to-date `main`;
 2. detects the stack, the git flow, the commands and any existing agent harness;
 3. runs the project's checks once, as a baseline;
-4. asks which modules to install;
+4. asks which modules to install, and confirms what it detected;
 5. merges the project's existing instructions into a new `AGENTS.md`, and shows the result before writing it;
-6. renders the templates into the repo (`AGENTS.md`, `CLAUDE.md`, `.agents/`, `.claude/`);
-7. writes `.agents/harness.json`, a manifest of the kit version and every installed file.
+6. renders the templates into the repo (`AGENTS.md`, `CLAUDE.md`, `.agents/`, `.claude/`), never overwriting an existing file without the owner's say;
+7. fills in the project-specific sections with the owner;
+8. writes `.agents/harness.json`, a manifest of the kit version and every installed file;
+9. proposes post-install steps such as `git config core.hooksPath .githooks`, without replacing existing hook tooling.
 
 The install lands through a normal PR. The project owns its copy and adapts it.
 
@@ -41,8 +43,13 @@ harness-kit/
 ├── docs/decisions.md                 # the kit's own ADR log
 └── plugins/harness-kit/
     ├── .claude-plugin/plugin.json    # name and version
-    ├── scripts/template-lint.mjs     # template contract checks, plus their tests
-    ├── skills/harness-init/          # the installer (Phase 3)
+    ├── scripts/                      # installer scripts and the template lint, each with tests
+    │   ├── contract.mjs              # the template contract as code
+    │   ├── detect.mjs                # read-only project detection
+    │   ├── render.mjs                # validate answers, render, merge settings
+    │   ├── manifest.mjs              # .agents/harness.json
+    │   └── template-lint.mjs         # template checks
+    ├── skills/harness-init/          # the installer skill
     └── templates/                    # inert templates (docs/templates.md)
         ├── vocabulary.json           # every {{TOKEN}} and kit:if flag
         ├── modules.json              # the module registry
@@ -58,7 +65,7 @@ Templates never sit in the plugin's top-level `agents/`, `hooks/` or `commands/`
 |---|---|
 | 1 | This skeleton: marketplace, plugin manifest, CI, docs |
 | 2 | Core templates, plus `open-pr`, `pre-push` and `flow-migration` (done) |
-| 3 | The `/harness-kit:harness-init` installer and its scripts |
+| 3 | The `/harness-kit:harness-init` installer and its scripts (done) |
 | 4 | Tests on throwaway repos and a brownfield fixture |
 | 5 | First real install on a brownfield project (the v1 finish line) |
 

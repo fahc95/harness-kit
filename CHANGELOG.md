@@ -2,7 +2,15 @@
 
 All notable changes to harness-kit. Versions follow `plugins/harness-kit/.claude-plugin/plugin.json`; bump it in the same PR as the entry.
 
-## 0.1.0 (unreleased)
+## 0.2.0 (unreleased)
+
+- The `/harness-kit:harness-init` installer skill (`skills/harness-init/SKILL.md`): checks for a clean, fresh branch off an up-to-date `main`, detects the project, runs baseline checks, asks for modules and answers, previews `AGENTS.md` and `CLAUDE.md`, renders, merges existing files, resolves every `kit:adapt` marker with the owner, writes the manifest and proposes post-install steps.
+- `scripts/render.mjs`: the template renderer (`plan`, `show`, `apply`). Validates answers against `vocabulary.json`, including `rejectCommandPatterns`, derives the computed tokens and flags, renders `kit:if` blocks in all three comment styles, merges settings fragments into `.claude/settings.json`, and never overwrites an existing file (the kit's version goes to `<file>.kit-new`). ADR-003.
+- `scripts/detect.mjs`: read-only detection of git state, package manager, check and database commands, database, container, UI, GitHub remote, Git Flow, hook tools and existing instructions.
+- `scripts/manifest.mjs`: writes `.agents/harness.json` with the kit version, modules, resolved values and flags, and `rendered` and `installed` sha256 hashes per file. Refuses while `kit:adapt` markers, `.kit-new` files or missing targets remain.
+- `scripts/contract.mjs`: the contract helpers, shared by the renderer, the detector and the template lint, so the lint now checks the installer's own renderer.
+
+## 0.1.0
 
 - Marketplace manifest (`.claude-plugin/marketplace.json`) and plugin manifest (`plugins/harness-kit/.claude-plugin/plugin.json`).
 - CI: `claude plugin validate --strict` for both manifests and `node --test`.
