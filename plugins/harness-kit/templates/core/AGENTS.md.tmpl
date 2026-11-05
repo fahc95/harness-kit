@@ -21,16 +21,20 @@ When goals conflict, prefer earlier in this list.
 ## Repo layout
 
 ```
-.agents/              # Agentic harness, provider-agnostic: personas, rules, workflows, memory
+.agents/              # Agentic harness, provider-agnostic: personas, rules, skills, memory
 ├── personas/         # Role definitions (see the team table below)
 ├── rules/            # Cross-cutting rules (source)
-├── workflows/        # Playbooks: plan, review, feature, retro
+├── skills/           # Playbooks and skills: plan, review, feature, retro
 └── memory/           # Decisions (ADRs), lessons (retros), learning log
-.claude/              # Claude Code adapter: sub-agents, slash commands, rules, settings and hooks wrapping .agents/
 AGENTS.md             # Universal agent instructions (this file)
-CLAUDE.md             # Claude Code entry point (imports this file)
 ```
 
+<!-- kit:if module.antigravity -->
+`GEMINI.md` is the Antigravity entry point, and `.agents/hooks.json` with `.agents/hooks/agy-guard.mjs` enforces `.env` and command guards in Antigravity.
+<!-- kit:end -->
+<!-- kit:if module.claude -->
+`CLAUDE.md` is the Claude Code entry point, and `.claude/` holds the Claude Code sub-agents, slash commands, rules, settings and hooks wrapping `.agents/`.
+<!-- kit:end -->
 <!-- kit:if module.prePush -->
 `.githooks/` holds the checked-in git hooks (pre-push refuses `main`).
 <!-- kit:end -->
@@ -54,9 +58,9 @@ Read the nearest `AGENTS.md` to whatever you are editing.
 
 For any change larger than a typo or a one-line config tweak:
 
-1. **Plan first.** Run the `planner` persona (or `.agents/workflows/plan.md`) with a one-line goal. It returns a numbered plan with file paths and acceptance criteria. No code yet.
+1. **Plan first.** Run the `planner` persona (or `.agents/skills/plan/SKILL.md`, `/plan`) with a one-line goal. It returns a numbered plan with file paths and acceptance criteria. No code yet.
 <!-- kit:if module.pm -->
-   For a feature whose backlog item isn't shaped yet, run the `pm` persona in `shape` mode first, so the planner plans against a user story and acceptance criteria.
+   For a feature whose backlog item isn't shaped yet, run the `pm` persona in `shape` mode (`/pm shape`) first, so the planner plans against a user story and acceptance criteria.
 <!-- kit:end -->
 2. **{{OWNER}} reviews the plan.** Approves, edits, or rejects.
 <!-- kit:if has.checks -->
@@ -68,7 +72,7 @@ For any change larger than a typo or a one-line config tweak:
 <!-- kit:if has.container -->
    If the diff touches the container image or boot path (`.agents/rules/production-parity.md`), a container run is the evidence. A host build is never evidence that production works.
 <!-- kit:end -->
-4. **Review the diff.** Run the `reviewer` persona (or `.agents/workflows/review.md`). Independent context, fresh read. The reviewer audits against conventions and drift checks, and may approve or request changes.
+4. **Review the diff.** Run the `reviewer` persona (or `.agents/skills/review/SKILL.md`, `/review`). Independent context, fresh read. The reviewer audits against conventions and drift checks, and may approve or request changes.
 5. **{{OWNER}} validates** the change where it runs, when relevant.
 <!-- kit:if module.openPr -->
 6. **Always ask {{OWNER}} before merging to `main`.** When {{OWNER}} asks for a PR, open it with `open-pr`. Never merge a branch or PR autonomously. Present the diff summary and green checks, and ask for explicit approval.
@@ -76,7 +80,7 @@ For any change larger than a typo or a one-line config tweak:
 <!-- kit:if !module.openPr -->
 6. **Always ask {{OWNER}} before merging to `main`.** Never merge a branch or PR autonomously. Present the diff summary and green checks, and ask for explicit approval.
 <!-- kit:end -->
-7. **Memorialize.** At session end, follow `.agents/workflows/retro.md`: brief the `retro` persona, which appends to `.agents/memory/lessons.md` and refreshes `docs/next-steps.md`; decisions it flags go to the `architect` as proposed ADRs.
+7. **Memorialize.** At session end, follow `.agents/skills/retro/SKILL.md` (`/retro`): brief the `retro` persona, which appends to `.agents/memory/lessons.md` and refreshes `docs/next-steps.md`; decisions it flags go to the `architect` as proposed ADRs.
 
 The reviewer pass is non-negotiable. It is the cheapest insurance against confidently wrong code.
 
@@ -86,7 +90,7 @@ GitHub flow: `main` is production, and every change reaches it through a PR.
 
 <!-- kit:adapt: Say in one sentence how main reaches production (which host or workflow deploys it, and after which checks). If nothing deploys automatically, say so. -->
 
-- **The main checkout stays on `main`; branch work happens in a worktree.** Claude Code worktree sessions load agents, hooks and settings from the main checkout, so a feature branch left checked out there hands every new session stale harness files. Start each task in a worktree off an up-to-date `main`, and never switch the main checkout's branch.
+- **The main checkout stays on `main`; branch work happens in a worktree.** Worktree sessions load shared harness files from the main checkout, so a feature branch left checked out there hands every new session stale harness files. Start each task in a worktree off an up-to-date `main`, and never switch the main checkout's branch.
 - **Pull `main` at session start**: fast-forward the main checkout (`git -C <main checkout> pull --ff-only`) before branching.
 - Branch from `main` as `{{BRANCH_PREFIX}}/<type>-<slug>`: a Conventional Commit type plus 2 to 5 kebab-case words. Stacked PRs target the branch below; restack when it changes and retarget to `main` once it merges. After the branch below is squash-merged, `git fetch` and restack with `git rebase --onto origin/main <old base SHA>`, where the old base SHA is the last commit of the branch below before the squash.
 - Commits and PR titles are Conventional Commits. The PR title becomes the squash commit.
@@ -118,26 +122,31 @@ Rollback paths:
 
 ## The team (`.agents/personas/`)
 
-IDs are role-based and are what files, hooks and workflows reference; names are what we call them. Personas run as sub-agents with a fresh context, so brief them fully; their final message is all the caller gets.
+IDs are role-based and are what files, hooks and skills reference; names are what we call them. Personas run as sub-agents with a fresh context, so brief them fully; their final message is all the caller gets.
 
 | ID | Name | Job | Can | Model |
 |---|---|---|---|---|
 | (main session) | **{{PERSONA_NAME_BUILDER}}** | Builder: implements approved plans, orchestrates the others, talks with {{OWNER}} | Everything the session allows | session model |
 <!-- kit:if has.db -->
-| `architect` | **{{PERSONA_NAME_ARCHITECT}}** | Shape of the system: decisions and ADRs, schema and migrations, architecture assessments | Edit `{{DB_PATH}}` and `decisions.md`; local DB Bash | Opus |
+| `architect` | **{{PERSONA_NAME_ARCHITECT}}** | Shape of the system: decisions and ADRs, schema and migrations, architecture assessments | Edit `{{DB_PATH}}` and `decisions.md`; local DB Bash | Opus / Pro |
 <!-- kit:end -->
 <!-- kit:if !has.db -->
-| `architect` | **{{PERSONA_NAME_ARCHITECT}}** | Shape of the system: decisions and ADRs, architecture assessments | Edit `decisions.md` | Opus |
+| `architect` | **{{PERSONA_NAME_ARCHITECT}}** | Shape of the system: decisions and ADRs, architecture assessments | Edit `decisions.md` | Opus / Pro |
 <!-- kit:end -->
-| `planner` | **{{PERSONA_NAME_PLANNER}}** | Step-by-step implementation plans | Read only | Opus |
-| `reviewer` | **{{PERSONA_NAME_REVIEWER}}** | Reviews every diff before merge | Read only + git and check Bash | Opus |
-| `retro` | **{{PERSONA_NAME_RETRO}}** | End-of-session lesson and handoff | Edit `lessons.md` and `next-steps.md` | Sonnet |
-| `researcher` | **{{PERSONA_NAME_RESEARCHER}}** | Researches a topic in its official docs and returns verified facts with URLs | Read only + web search and fetch | Sonnet |
+| `planner` | **{{PERSONA_NAME_PLANNER}}** | Step-by-step implementation plans | Read only | Opus / Pro |
+| `reviewer` | **{{PERSONA_NAME_REVIEWER}}** | Reviews every diff before merge | Read only + git and check Bash | Opus / Pro |
+| `retro` | **{{PERSONA_NAME_RETRO}}** | End-of-session lesson and handoff | Edit `lessons.md` and `next-steps.md` | Sonnet / Flash |
+| `researcher` | **{{PERSONA_NAME_RESEARCHER}}** | Researches a topic in its official docs and returns verified facts with URLs | Read only + web search and fetch | Sonnet / Flash |
 <!-- kit:if module.pm -->
-| `pm` | **{{PERSONA_NAME_PM}}** | Product manager: what to build and in what order; triages, shapes and ranks the backlog, and syncs it after each retro | Read only + the backlog (its PM tool, or `docs/backlog.md`) | Sonnet |
+| `pm` | **{{PERSONA_NAME_PM}}** | Product manager: what to build and in what order; triages, shapes and ranks the backlog, and syncs it after each retro | Read only + the backlog (its PM tool, or `docs/backlog.md`) | Sonnet / Flash |
 <!-- kit:end -->
 
-Cost controls: in their Claude wrappers the planner, reviewer and architect run at `effort: medium`, every Opus persona has a `maxTurns` cap, and `.agents/workflows/review.md` sizes each review to the risk of the diff. Raise a persona's effort for a single hard run through the Agent call, not by editing the wrapper.
+<!-- kit:if module.claude -->
+Cost controls (Claude Code): in `.claude/agents/` the planner, reviewer and architect run at `effort: medium`, every Opus persona has a `maxTurns` cap, and `.agents/skills/review/SKILL.md` sizes each review to the risk of the diff. Raise a persona's effort for a single hard run through the Agent call, not by editing the wrapper.
+<!-- kit:end -->
+<!-- kit:if module.antigravity -->
+Cost controls (Antigravity): in `GEMINI.md` the planner, reviewer and architect run with `Model: "pro"` (or `"inherit"`), the retro, researcher and pm personas run with `Model: "flash"`, and `.agents/skills/review/SKILL.md` sizes each review to the risk of the diff.
+<!-- kit:end -->
 
 When to run each:
 
@@ -216,7 +225,7 @@ When in doubt about a past decision, grep `decisions.md` first.
 
 ## Rules
 
-Cross-cutting rules live in `.agents/rules/`. Claude Code loads each file-scoped one through a thin `.claude/rules/<topic>.md` adapter when a matching file is read or edited; other agents read the source before working on those paths.
+Cross-cutting rules live in `.agents/rules/`. Antigravity discovers `.agents/rules/*.md` directly; Claude Code loads each file-scoped one through a thin `.claude/rules/<topic>.md` adapter when a matching file is read or edited; other agents read the source before working on those paths.
 
 - `commands.md`: commands the agent may run without asking.
 - `env-and-secrets.md`: environment variables and secrets.

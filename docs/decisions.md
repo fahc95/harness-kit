@@ -63,3 +63,24 @@ Append-only ADR log for decisions about the kit itself. Decisions about the harn
 **Consequences**:
 - Easier: a brownfield install can't lose project content; a sync can re-render the old version from the stored values and compare both hashes.
 - Harder: the skill must clear every `.kit-new` file before the manifest can be written. The manifest holds the project's commands and names, which is fine in a repo but must never hold secrets.
+
+---
+
+## ADR-004: Multi-Provider Adapters (`claude` and `antigravity`) and Universal `.agents/skills/` Playbooks
+**Date**: 2026-11-05
+**Status**: Proposed
+
+**Context**: `.agents/` and `AGENTS.md` hold the provider-agnostic harness, while provider-specific wiring originally lived inside `core` for Claude Code only (`CLAUDE.md`, `.claude/**`, `.claude/settings.json`), and playbooks lived in `.agents/workflows/*.md`. Google Antigravity natively discovers `AGENTS.md`, `.agents/rules/*.md`, `.agents/skills/<name>/SKILL.md` (with `/<name>` slash command support; `.agents/workflows/` is deprecated in Antigravity), and `.agents/hooks.json` (using a camelCase `PreToolUse` JSON contract on stdin/stdout).
+
+**Decision**:
+1. `core` holds only the universal `.agents/` and `AGENTS.md` files (`AGENTS.md`, `docs/next-steps.md`, `.agents/memory/*`, `.agents/personas/*`, `.agents/rules/*`, and `.agents/skills/{plan,review,feature,retro}/SKILL.md`).
+2. Provider adapters are selectable modules in `modules.json` (`claude` with flag `module.claude`, and `antigravity` with flag `module.antigravity`), both enabled by default. `resolveAnswers` requires at least one provider adapter.
+3. The `antigravity` module installs `GEMINI.md` (wiring `.agents/personas/` to `define_subagent` and `invoke_subagent`), `.agents/hooks.json`, and `.agents/hooks/agy-guard.mjs` (plus `agy-guard.test.mjs`), which fails closed and enforces `.env` read/edit/command blocks, `main` push and `--no-verify` blocks, and `force_ask` confirmation on production-reaching commands.
+4. Playbooks (`plan`, `review`, `feature`, `retro`, and `pm` in the `pm` module) live in `.agents/skills/<name>/SKILL.md` with YAML frontmatter so Antigravity discovers them directly as skills and slash commands, while `.claude/commands/<name>.md` `@`-imports the same files when `module.claude` is installed.
+5. `plugins/harness-kit/plugin.json` is shipped alongside `.claude-plugin/plugin.json` (and kept in sync by `template-lint.test.mjs`) so Antigravity can load the plugin natively, and `skills/harness-init/SKILL.md` resolves scripts relative to the plugin root when `${CLAUDE_PLUGIN_ROOT}` is unset.
+
+**Alternatives considered**: keeping `.claude/` inside `core` (forces Claude files into Antigravity-only repos); duplicating playbooks across `.agents/workflows/` and `.agents/skills/` (two sources of truth that can drift).
+
+**Consequences**:
+- Easier: target repos can install Claude Code, Antigravity, or both around one `.agents/` core; every playbook is a first-class skill and slash command in both providers.
+- Harder: `template-lint.test.mjs` runs both `.claude/hooks/guards.test.mjs` and `.agents/hooks/agy-guard.test.mjs` and checks that both keep the vocabulary's production command list in sync.

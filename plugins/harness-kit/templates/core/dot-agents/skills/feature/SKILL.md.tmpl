@@ -1,4 +1,9 @@
-# Workflow: Feature Vertical Slice
+---
+name: feature
+description: Plan and implement a vertical slice of a feature through every layer of the stack, then review it. Plans first with the planner, waits for approval, implements layer by layer and reviews.
+---
+
+# Skill: Feature Vertical Slice
 
 **Goal**: Plan and implement a vertical slice of a feature through every layer of the stack, then review it.
 
@@ -6,7 +11,7 @@
 
 ## Phase 1: Plan
 1. Run the `architect` ({{PERSONA_NAME_ARCHITECT}}) if the feature needs a decision no ADR covers. Pass its output to the planner.
-2. Invoke the `planner` persona (`.agents/personas/planner.md` or `.agents/workflows/plan.md`) with the feature description.
+2. Invoke the `planner` persona (`.agents/personas/planner.md` or `.agents/skills/plan/SKILL.md`) with the feature description.
 3. The plan must explicitly name the change in each layer listed in Phase 2, plus the tests for each.
 4. Stop and present the plan to {{OWNER}}. **Do not proceed without explicit approval.**
 
@@ -26,7 +31,7 @@ Walk through the plan in strict order, one layer at a time:
 <!-- kit:end -->
 
 ## Phase 3: Review
-Run the review workflow (`.agents/workflows/review.md`) on the full diff. Fix any blockers or issues raised.
+Run the review skill (`.agents/skills/review/SKILL.md`) on the full diff. Fix any blockers or issues raised.
 <!-- kit:if has.ui -->
 
 ## Phase 4: UI check

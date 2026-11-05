@@ -1,0 +1,130 @@
+// Antigravity PreToolUse hook for .agents/hooks.json: enforces .env protection, blocks pushes to
+// main and --no-verify, and gates production-reaching commands with force_ask.
+// Speaks Antigravity's camelCase JSON contract on stdin/stdout and fails closed on any error.
+import path from "node:path";
+
+const respond = (decision, reason) => {
+  const out = reason ? { decision, reason } : { decision };
+  process.stdout.write(`${JSON.stringify(out)}\n`);
+  process.exit(0);
+};
+
+const deny = (reason) => respond("deny", `Blocked by agy-guard: ${reason}`);
+const ask = (reason) => respond("force_ask", `agy-guard: ${reason}`);
+const allow = () => respond("allow");
+
+process.on("uncaughtException", (error) =>
+  deny(`agy-guard crashed: ${String(error?.message ?? error)}`),
+);
+process.on("unhandledRejection", (error) => deny(`agy-guard crashed: ${String(error)}`));
+
+// Exact check and local database commands configured for this repository.
+export const VERIFY_COMMANDS = {{VERIFY_COMMANDS_JSON}};
+// kit:if has.db
+export const DB_COMMANDS = {{DB_COMMANDS_JSON}};
+// kit:end
+// kit:if !has.db
+export const DB_COMMANDS = [];
+// kit:end
+
+// Secret .env files (.agents/rules/env-and-secrets.md). .env.example, .env.sample and
+// .env.template do not match and stay readable and editable.
+const ENV_NAME_RE =
+  /^\.env(\.(local|[^/\\]+\.local|development|dev|production|prod|staging|test|bak|backup))?$/i;
+
+export const isEnvPath = (candidate) => {
+  if (typeof candidate !== "string" || !candidate.trim()) return false;
+  const cleaned = candidate.trim().replace(/^['"`]+|['"`]+$/g, "");
+  for (const seg of cleaned.split(/[/\\]+/)) {
+    if (ENV_NAME_RE.test(seg)) return true;
+  }
+  return ENV_NAME_RE.test(path.posix.basename(cleaned));
+};
+
+export const commandTouchesEnv = (command) => {
+  for (const raw of command.split(/[\s;|&<>()"'`=]+/)) {
+    if (raw && isEnvPath(raw)) return true;
+  }
+  return false;
+};
+
+// Direct pushes to main and --no-verify are forbidden by AGENTS.md.
+const GIT_NO_VERIFY_RE = /(^|\s)git\b[^\n;|]*\s--no-verify(\s|$)/;
+const GIT_PUSH_MAIN_RE =
+  /(^|\s)git\s+push\b[^\n;|]*(\s|:)(main|refs\/heads\/main)(\s|$)/;
+
+// Mirrors harness-kit's render-time production pattern list (case-insensitive).
+export const PRODUCTION = [
+  /^(\S+ (exec |dlx )?)?(ssh|scp|rsync|sftp|kubectl|helm|terraform|pulumi|ansible|curl|wget|psql|mysql|mongosh|redis-cli)\b/i,
+  /^(\S+ (exec |dlx )?)?(gh|git push|docker push|docker login)\b/i,
+  /^(\S+ (exec |dlx )?)?(fly|flyctl|vercel|netlify|heroku|firebase|wrangler|supabase|aws|gcloud|az)\b/i,
+  /(^|[\s:])(deploy|release|publish|push)(:[\w-]+)?(\s|$)/i,
+  /(^|[\s:-])remote\b/i,
+  /:\/\//i,
+  /@[\w-]+\.[\w.-]+/i,
+  /prod/i,
+];
+
+process.stdin.setEncoding("utf8");
+let raw = "";
+for await (const chunk of process.stdin) raw += chunk;
+
+let payload;
+try {
+  payload = JSON.parse(raw);
+} catch {
+  deny("could not parse the hook payload.");
+}
+
+const toolName = payload?.toolCall?.name;
+const args = payload?.toolCall?.args;
+if (typeof toolName !== "string" || !toolName || typeof args !== "object" || args === null || Array.isArray(args)) {
+  deny("missing toolCall.name or toolCall.args in the hook payload.");
+}
+
+if (["view_file", "read_file", "write_file", "edit_file", "grep_search"].includes(toolName)) {
+  const candidates = [
+    args.Path,
+    args.AbsolutePath,
+    args.SearchPath,
+    args.Directory,
+    args.FilePath,
+    ...(Array.isArray(args.Paths) ? args.Paths : []),
+    ...(Array.isArray(args.SearchPaths) ? args.SearchPaths : []),
+  ].filter((v) => typeof v === "string");
+  if (candidates.length === 0) deny(`no file path in ${toolName} args.`);
+  for (const p of candidates) {
+    if (isEnvPath(p)) {
+      deny(`reading or editing ${p} is forbidden (.agents/rules/env-and-secrets.md).`);
+    }
+  }
+  allow();
+}
+
+if (toolName === "run_command") {
+  const command = args.CommandLine;
+  if (typeof command !== "string" || !command.trim()) {
+    deny("no CommandLine in run_command args.");
+  }
+  if (commandTouchesEnv(command)) {
+    deny("commands may not read or write .env files (.agents/rules/env-and-secrets.md).");
+  }
+  if (GIT_NO_VERIFY_RE.test(command)) {
+    deny("--no-verify is forbidden (AGENTS.md).");
+  }
+  if (GIT_PUSH_MAIN_RE.test(command)) {
+    deny("pushing directly to main is forbidden; open a PR instead (AGENTS.md).");
+  }
+  const segments = command
+    .split(/&&|\|\||[;|\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const seg of segments) {
+    if (PRODUCTION.some((re) => re.test(seg))) {
+      ask(`"${seg}" looks production-reaching; confirm with the owner before running.`);
+    }
+  }
+  allow();
+}
+
+allow();

@@ -414,18 +414,20 @@ const withTempRepo = (fn) => {
   }
 };
 
-describe("rendered core hooks", () => {
+describe("rendered claude and antigravity hooks", () => {
   // Guards against a rendered suite that silently registers nothing (it runs about 100 cases).
   const MIN_GUARD_TESTS = 60;
+  const MIN_AGY_GUARD_TESTS = 35;
 
   for (const [name, values, flags] of [
     ["has.db true", examples, allFlags(true)],
     ["has.db false", examples, { ...allFlags(true), "has.db": false }],
     ["no check commands", { ...examples, VERIFY_COMMANDS_JSON: [] }, { ...allFlags(true), "has.checks": false }],
   ]) {
-    test(`guards.test passes with ${name}`, () =>
+    test(`claude guards.test passes with ${name}`, () =>
       withTempRepo((root) => {
         renderModule("core", root, values, flags);
+        renderModule("claude", root, values, flags);
         const hooks = path.join(root, ".claude/hooks");
         for (const f of fs.readdirSync(hooks)) {
           const check = spawnSync(process.execPath, ["--check", path.join(hooks, f)], { encoding: "utf8" });
@@ -434,10 +436,25 @@ describe("rendered core hooks", () => {
         const passed = runRenderedTest(path.join(hooks, "guards.test.mjs"));
         assert.ok(passed >= MIN_GUARD_TESTS, `only ${passed} guard tests ran`);
       }));
+
+    test(`antigravity agy-guard.test passes with ${name}`, () =>
+      withTempRepo((root) => {
+        renderModule("core", root, values, flags);
+        renderModule("antigravity", root, values, flags);
+        const hooksJson = JSON.parse(fs.readFileSync(path.join(root, ".agents/hooks.json"), "utf8"));
+        assert.ok(hooksJson["harness-guard"]?.PreToolUse?.length === 1);
+        const hooks = path.join(root, ".agents/hooks");
+        for (const f of fs.readdirSync(hooks)) {
+          const check = spawnSync(process.execPath, ["--check", path.join(hooks, f)], { encoding: "utf8" });
+          assert.equal(check.status, 0, `${f}: ${check.stderr}`);
+        }
+        const passed = runRenderedTest(path.join(hooks, "agy-guard.test.mjs"));
+        assert.ok(passed >= MIN_AGY_GUARD_TESTS, `only ${passed} agy-guard tests ran`);
+      }));
   }
 
   test("the settings fragment renders to JSON with the .env deny list and the allow list", () => {
-    const text = read("core/settings.fragment.json.tmpl");
+    const text = read("common/claude/settings.fragment.json.tmpl");
     const settings = JSON.parse(miniRender(text, { style: "none", values: examples, flags: allFlags(true) }));
     assert.deepEqual(settings.permissions.allow, examples.ALLOW_RULES_JSON);
     assert.equal(settings.permissions.deny.length, 44);
@@ -447,16 +464,33 @@ describe("rendered core hooks", () => {
     }
   });
 
-  test("guards.test carries the vocabulary's production list, case-insensitive", () => {
-    const text = read("core/dot-claude/hooks/guards.test.mjs.tmpl");
-    const start = text.indexOf("const PRODUCTION = [");
-    const block = text.slice(start, text.indexOf("];", start));
-    const inTest = [...block.matchAll(/^\s*\/(.+)\/([a-z]*),$/gm)].map((m) => [m[1].replaceAll("\\/", "/"), m[2]]);
+  test("guards.test and agy-guard carry the vocabulary's production list, case-insensitive", () => {
     // Alternatives the kit lint keeps out of templates (host names) are only in the vocabulary.
     const templateSafe = (p) =>
       p.replace(/\|([a-z-]+)/g, (alt, name) => (FORBIDDEN.some((re) => re.test(name)) ? "" : alt));
     const inVocabulary = vocabulary.rejectCommandPatterns.production.map((p) => [templateSafe(p), "i"]);
-    assert.deepEqual(inTest, inVocabulary);
+    for (const tmpl of [
+      "common/claude/dot-claude/hooks/guards.test.mjs.tmpl",
+      "common/antigravity/dot-agents/hooks/agy-guard.mjs.tmpl",
+    ]) {
+      const text = read(tmpl);
+      const start = text.search(/const PRODUCTION = \[/);
+      const block = text.slice(start, text.indexOf("];", start));
+      const inTemplate = [...block.matchAll(/^\s*\/(.+)\/([a-z]*),$/gm)].map((m) => [
+        m[1].replaceAll("\\/", "/"),
+        m[2],
+      ]);
+      assert.deepEqual(inTemplate, inVocabulary, tmpl);
+    }
+  });
+
+  test("plugin.json and .claude-plugin/plugin.json stay in sync", () => {
+    const kitRoot = path.join(TEMPLATES, "..");
+    const claudePlugin = JSON.parse(fs.readFileSync(path.join(kitRoot, ".claude-plugin/plugin.json"), "utf8"));
+    const agyPlugin = JSON.parse(fs.readFileSync(path.join(kitRoot, "plugin.json"), "utf8"));
+    for (const key of ["name", "version", "description", "author", "repository"]) {
+      assert.deepEqual(agyPlugin[key], claudePlugin[key], `plugin.json ${key}`);
+    }
   });
 });
 
@@ -502,6 +536,7 @@ describe("rendered common modules", () => {
     withTempRepo((root) => {
       const flags = { ...allFlags(true), "has.pmTool": false };
       renderModule("core", root, examples, flags);
+      renderModule("claude", root, examples, flags);
       renderModule("pm", root, examples, flags);
       const wrapper = fs.readFileSync(path.join(root, ".claude/agents/pm.md"), "utf8");
       assert.match(wrapper, /^tools: Read, Edit, Glob, Grep, Bash$/m);

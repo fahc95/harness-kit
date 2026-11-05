@@ -5,6 +5,7 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 ## Layout and path mapping
 
 - Each module has a root: `templates/core/`, `templates/common/<id>/` or `templates/examples/<id>/`. Under it, files mirror their path in the target repo.
+- `core/` holds the universal `.agents/` and `AGENTS.md` files; `common/claude/` and `common/antigravity/` hold the selectable provider adapters (`module.claude` and `module.antigravity`, at least one required).
 - The target path is the template path with the module root and the `.tmpl` suffix removed, and every `dot-<x>` segment turned into `.<x>`. For example, `core/dot-agents/personas/planner.md.tmpl` renders to `.agents/personas/planner.md`.
 - Every template file ends in `.tmpl` and no path segment starts with a dot, so a session in this repo never loads a template as a live rule, skill, agent or `CLAUDE.md`, and `node --test` never runs a template test.
 - The only files under `templates/` without `.tmpl` are the data files `modules.json` (the module registry) and `vocabulary.json` (this contract). Nothing auto-loads them.
@@ -18,7 +19,7 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 - `.mjs` and `.json` templates may use only `_JSON` tokens, so a value always lands as a JSON literal, never as code, a raw regex or a broken string. Shell and YAML templates may use only `identifier` tokens.
 - A token with a `when` flag (for example `CMD_TEST` with `has.test`) may appear only inside a `kit:if` block on that flag, because it has no value when the flag is false.
 - Rendering fails on an unknown or unfilled token, and on a value that doesn't match its type.
-- Every command value (a `command` token, an item of a `commandItems` array, or the command inside a `Bash(...)` rule) is also checked against `rejectCommandPatterns`: its `production` list (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts) and its `blockedByGuard` list (what bash-guard blocks anyway). The installed `guards.test.mjs` keeps a copy of the production list, and the lint test checks the two match. A match is never rendered; the installer asks the owner instead. This backs the hard rule that no production command reaches a guard profile or a tracked `permissions.allow`.
+- Every command value (a `command` token, an item of a `commandItems` array, or the command inside a `Bash(...)` rule) is also checked against `rejectCommandPatterns`: its `production` list (remote hosts, deploy CLIs, connection URLs, push, deploy and release scripts) and its `blockedByGuard` list (what bash-guard blocks anyway). The installed `guards.test.mjs` and `agy-guard.mjs` keep a copy of the production list, and the lint test checks they match. A match is never rendered; the installer asks the owner instead. This backs the hard rule that no production command reaches a guard profile or a tracked `permissions.allow`.
 - Persona display names are tokens (`{{PERSONA_NAME_PLANNER}}`). The reference implementation's names are their defaults and appear only in `vocabulary.json`.
 - There is no escape for a literal `{{` yet. Add one to the contract when a template first needs it.
 

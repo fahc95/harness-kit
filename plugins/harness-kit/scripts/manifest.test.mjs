@@ -74,7 +74,7 @@ describe("buildManifest and writeManifest", () => {
       assert.equal(m.schemaVersion, 1);
       assert.deepEqual(m.kit, { name: "harness-kit", version: kit.version });
       assert.equal(m.installedAt, "2026-01-15");
-      assert.deepEqual(m.modules, ["core", "open-pr", "githooks-pre-push", "pm"]);
+      assert.deepEqual(m.modules, ["core", "claude", "antigravity", "open-pr", "githooks-pre-push", "pm"]);
       assert.equal(m.values.PROJECT_NAME, "Example App");
       assert.equal(m.flags["has.db"], true);
 
@@ -91,7 +91,7 @@ describe("buildManifest and writeManifest", () => {
         assert.match(f.rendered, /^sha256:[0-9a-f]{64}$/);
       }
       assert.equal(m.files.find((f) => f.target === ".githooks/pre-push").mode, "0755");
-      assert.deepEqual(m.settings.fragments, ["core/settings.fragment.json.tmpl"]);
+      assert.deepEqual(m.settings.fragments, ["common/claude/settings.fragment.json.tmpl"]);
       assert.equal(m.settings.installed, sha256(fs.readFileSync(path.join(root, ".claude/settings.json"), "utf8")));
     }));
 });

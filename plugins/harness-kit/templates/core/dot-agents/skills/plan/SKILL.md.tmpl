@@ -1,4 +1,9 @@
-# Workflow: Plan Feature or Change
+---
+name: plan
+description: Plan a feature or non-trivial change with the planner persona ({{PERSONA_NAME_PLANNER}}). Returns a numbered plan with exact file paths, impacts and acceptance criteria. Run before any non-trivial implementation.
+---
+
+# Skill: Plan Feature or Change
 
 **Goal**: Plan a feature or non-trivial change with the `planner` persona ({{PERSONA_NAME_PLANNER}}). Returns a numbered plan with exact file paths, impacts and acceptance criteria. **Must be executed before any non-trivial implementation.**
 
@@ -12,7 +17,7 @@
    - Inspect existing files in the touched areas using grep, find, and file view tools.
 
 2. **Formulate the Plan**:
-   Follow the format in `.agents/personas/planner.md`:
+   Run the `planner` persona (`.agents/personas/planner.md`) as a read-only sub-agent and follow its format:
    - Plan title and 1-paragraph summary.
    - Numbered file-by-file changes with exact paths, what changes, and why.
 <!-- kit:if has.db -->

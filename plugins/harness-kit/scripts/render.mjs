@@ -143,6 +143,9 @@ export function resolveAnswers(kit, answers) {
   const byId = new Map(registry.modules.map((m) => [m.id, m]));
   for (const id of ids) if (!byId.has(id)) errors.push(`unknown module "${id}"`);
   if (!ids.includes("core")) errors.push('the "core" module is required');
+  if (ids.includes("core") && !ids.includes("claude") && !ids.includes("antigravity")) {
+    errors.push('at least one provider adapter ("claude" or "antigravity") is required');
+  }
   for (const id of ids) {
     for (const r of byId.get(id)?.requires ?? []) {
       if (!ids.includes(r)) errors.push(`module "${id}" requires "${r}"`);
