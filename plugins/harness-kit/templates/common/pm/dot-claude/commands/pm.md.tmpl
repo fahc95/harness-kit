@@ -1,0 +1,21 @@
+---
+description: Run the pm sub-agent to decide what to work on next, triage an idea or bug, shape a feature, sync or groom the backlog, or summarize the roadmap.
+argument-hint: "next | intake <idea or bug> | shape <item> | sync | groom | roadmap"
+---
+
+Invoke the `pm` sub-agent with the Agent tool. Brief it with the mode and the user's input below, plus anything from this session it needs: for `sync`, the follow-ups the retro flagged; for `shape`, what {{OWNER}} already said about the feature.
+
+Modes (`.agents/personas/pm.md`):
+
+- `next`: rank the top 3 items to work on now.
+- `intake <idea or bug>`: capture it as a backlog item, after checking for duplicates.
+- `shape <item>`: write the product half of an item before the planner plans it.
+- `sync`: close shipped items and file follow-ups, after a retro.
+- `groom`: propose closes, merges and re-ranks.
+- `roadmap`: summarize progress by status.
+
+Show the sub-agent's report to {{OWNER}}. If it asks for approval, ask {{OWNER}} and pass the answer back in a new run.
+
+Arguments from the user:
+
+$ARGUMENTS

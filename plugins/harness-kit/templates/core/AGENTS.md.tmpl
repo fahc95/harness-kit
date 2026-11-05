@@ -22,7 +22,7 @@ When goals conflict, prefer earlier in this list.
 
 ```
 .agents/              # Agentic harness, provider-agnostic: personas, rules, workflows, memory
-├── personas/         # Role definitions: architect, planner, reviewer, retro, researcher
+├── personas/         # Role definitions (see the team table below)
 ├── rules/            # Cross-cutting rules (source)
 ├── workflows/        # Playbooks: plan, review, feature, retro
 └── memory/           # Decisions (ADRs), lessons (retros), learning log
@@ -44,6 +44,9 @@ Read the nearest `AGENTS.md` to whatever you are editing.
 - **`.agents/` is how we work** (the harness); **`docs/` is what we build** (the product).
 - Approved plans go in `docs/plans/<yyyy-mm>-<slug>.md`. Set the plan's `**Status:**` line to `Shipped (#PR)` when it merges.
 - `docs/next-steps.md` is the session handoff: overwrite it at the end of each slice.
+<!-- kit:if module.pm -->
+- Open work (ideas, bugs, follow-ups, priorities) lives only in the backlog the `pm` persona owns (`.agents/personas/pm.md` says where). The handoff points at it and never lists open work itself.
+<!-- kit:end -->
 - **Living docs vs records.** Living docs (`AGENTS.md`, `README.md`, `docs/next-steps.md`) must match the present. Records (shipped plans, `.agents/memory/*`) are never rewritten; the only allowed edits are status lines and link paths after a move.
 - Move files with `git mv`, in a commit with no content edits, so history follows the file.
 
@@ -52,6 +55,9 @@ Read the nearest `AGENTS.md` to whatever you are editing.
 For any change larger than a typo or a one-line config tweak:
 
 1. **Plan first.** Run the `planner` persona (or `.agents/workflows/plan.md`) with a one-line goal. It returns a numbered plan with file paths and acceptance criteria. No code yet.
+<!-- kit:if module.pm -->
+   For a feature whose backlog item isn't shaped yet, run the `pm` persona in `shape` mode first, so the planner plans against a user story and acceptance criteria.
+<!-- kit:end -->
 2. **{{OWNER}} reviews the plan.** Approves, edits, or rejects.
 <!-- kit:if has.checks -->
 3. **Implement.** Implement the approved plan step by step. Run `{{CMD_CHECKS}}` before declaring done. A check that can't run is reported "not run: <reason>", never "passed".
@@ -127,6 +133,9 @@ IDs are role-based and are what files, hooks and workflows reference; names are 
 | `reviewer` | **{{PERSONA_NAME_REVIEWER}}** | Reviews every diff before merge | Read only + git and check Bash | Opus |
 | `retro` | **{{PERSONA_NAME_RETRO}}** | End-of-session lesson and handoff | Edit `lessons.md` and `next-steps.md` | Sonnet |
 | `researcher` | **{{PERSONA_NAME_RESEARCHER}}** | Researches a topic in its official docs and returns verified facts with URLs | Read only + web search and fetch | Sonnet |
+<!-- kit:if module.pm -->
+| `pm` | **{{PERSONA_NAME_PM}}** | Product manager: what to build and in what order; triages, shapes and ranks the backlog, and syncs it after each retro | Read only + the backlog (its PM tool, or `docs/backlog.md`) | Sonnet |
+<!-- kit:end -->
 
 Cost controls: in their Claude wrappers the planner, reviewer and architect run at `effort: medium`, every Opus persona has a `maxTurns` cap, and `.agents/workflows/review.md` sizes each review to the risk of the diff. Raise a persona's effort for a single hard run through the Agent call, not by editing the wrapper.
 
@@ -140,6 +149,9 @@ When to run each:
 - **`reviewer`** (`.agents/personas/reviewer.md`): any diff before merging, even self-PRs.
 - **`retro`** (`.agents/personas/retro.md`): at end of session or slice, given a brief of what happened. Flags decisions for the `architect` to record as ADRs.
 - **`researcher`** (`.agents/personas/researcher.md`): before adopting a dependency or relying on an external tool's behavior. Brief it with the topic, the versions this repo pins, and the questions to answer; it returns facts with official-doc URLs.
+<!-- kit:if module.pm -->
+- **`pm`** (`.agents/personas/pm.md`, `/pm <mode>`): owns what and why, in what order. At session start (`next`) it ranks what to work on; it captures ideas and bugs (`intake`), shapes a feature before the planner (`shape`), reconciles the backlog after the retro (`sync`), and keeps it lean (`groom`, `roadmap`).
+<!-- kit:end -->
 
 ## Project rules
 

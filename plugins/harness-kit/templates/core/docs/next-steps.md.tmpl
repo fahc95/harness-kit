@@ -10,9 +10,18 @@
 
 ## In flight
 
+<!-- kit:if module.pm -->
+Open work lives in the backlog (`.agents/personas/pm.md` says where). List only what is in flight right now.
+
+<!-- kit:end -->
 <!-- kit:adapt: List open work: open PRs, half-done branches, known follow-ups. Write "Nothing in flight." if there is none. -->
 
 ## How to resume
 
 1. Pull `main` and start a worktree (`AGENTS.md` "Git & PRs").
+<!-- kit:if module.pm -->
+2. Read this file, run `/pm next` to pick the goal, then `/plan` with it.
+<!-- kit:end -->
+<!-- kit:if !module.pm -->
 2. Read this file, then run `/plan` with the next goal.
+<!-- kit:end -->

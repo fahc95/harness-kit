@@ -110,6 +110,7 @@ describe("detect", () => {
       assert.equal(r.git.isRepo, false);
       assert.equal(r.suggestions.values.PROJECT_NAME, path.basename(root));
       assert.equal(r.suggestions.flags["flow.gitFlow"], false);
+      assert.deepEqual(r.existing.mcpServers, []);
     }));
 
   test("a node project on a fresh branch", () =>
@@ -127,6 +128,7 @@ describe("detect", () => {
       put(repo, ".github/workflows/ci.yml", "on:\n  push:\n    branches: [main]\n");
       put(repo, "CLAUDE.md", "# old\n");
       put(repo, "packages/api/AGENTS.md", "# api\n");
+      put(repo, ".mcp.json", JSON.stringify({ mcpServers: { tracker: {}, docs: {} } }));
       sh(repo, "add", ".");
       sh(repo, "commit", "-q", "-m", "app");
       sh(repo, "push", "-q", "origin", "main");
@@ -161,6 +163,7 @@ describe("detect", () => {
       assert.deepEqual(r.existing.instructions, ["CLAUDE.md"]);
       assert.deepEqual(r.existing.nestedInstructions, ["packages/api/AGENTS.md"]);
       assert.equal(r.existing.harnessManifest, null);
+      assert.deepEqual(r.existing.mcpServers, ["docs", "tracker"]);
     }));
 
   test("dirty trees, stale branches, hooks and a previous install are reported", () =>

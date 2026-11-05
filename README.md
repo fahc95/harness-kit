@@ -54,7 +54,7 @@ harness-kit/
         ├── vocabulary.json           # every {{TOKEN}} and kit:if flag
         ├── modules.json              # the module registry
         ├── core/                     # AGENTS.md, CLAUDE.md, .agents/, .claude/
-        └── common/                   # open-pr, githooks-pre-push, flow-migration
+        └── common/                   # open-pr, githooks-pre-push, pm, flow-migration
 ```
 
 Templates never sit in the plugin's top-level `agents/`, `hooks/` or `commands/` folders, because Claude Code would load those as live components in every project.

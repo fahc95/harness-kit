@@ -74,7 +74,7 @@ describe("buildManifest and writeManifest", () => {
       assert.equal(m.schemaVersion, 1);
       assert.deepEqual(m.kit, { name: "harness-kit", version: kit.version });
       assert.equal(m.installedAt, "2026-01-15");
-      assert.deepEqual(m.modules, ["core", "open-pr", "githooks-pre-push"]);
+      assert.deepEqual(m.modules, ["core", "open-pr", "githooks-pre-push", "pm"]);
       assert.equal(m.values.PROJECT_NAME, "Example App");
       assert.equal(m.flags["has.db"], true);
 

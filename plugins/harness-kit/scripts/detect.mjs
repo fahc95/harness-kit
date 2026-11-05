@@ -180,6 +180,9 @@ export function detect(repo, kit = loadKit()) {
       instructions: INSTRUCTION_FILES.filter((f) => exists(root, f)),
       nestedInstructions: nested,
       hookTools: HOOK_TOOLS.filter((f) => exists(root, f)),
+      // Project-scoped MCP servers, a hint for the pm module's PM tool. Servers the owner
+      // connected elsewhere (claude.ai connectors, user scope) don't show here.
+      mcpServers: Object.keys(readJson(root, ".mcp.json")?.mcpServers ?? {}).sort(),
     },
     suggestions: {
       values: {

@@ -55,7 +55,8 @@ Ask in a few short rounds, offering the detected suggestion as the default each 
 1. **Modules.** Read `${CLAUDE_PLUGIN_ROOT}/templates/modules.json`. `core` is always installed. Offer each other module by its `offer` text, only when its `when` flag is true, and respect `requires`. `flow-migration` is offered only when the owner confirms the repo uses Git Flow.
 2. **Flags.** Confirm `has.db`, `has.ui`, `has.container`, `has.github` and `flow.gitFlow` with the evidence behind each. The check flags (`has.typecheck`, `has.lint`, `has.test`, `has.checks`) and `module.*` flags are derived; don't ask for them.
 3. **Values.** Read `${CLAUDE_PLUGIN_ROOT}/templates/vocabulary.json` for each token's description and pattern. Ask for `PROJECT_NAME`, `OWNER`, `BRANCH_PREFIX`, and confirm `ENV_PREFIX` (derived from the project name if not set). Confirm the check commands, and with `has.db` the `DB_PATH` and each `DB_COMMANDS_JSON` entry (local database only). With `open-pr`: `GH_REPO`, `GH_ACCOUNT` and `RISKY_PATHS_JSON`. Persona display names default to the vocabulary's `default`; offer to change them in one question.
-4. **Allow list.** Propose `ALLOW_RULES_JSON` from the local commands found (the checks, install, dev server) plus `Bash(git status)`, `Bash(git diff *)` and `Bash(git log *)`. If you leave it out, the renderer uses the checks plus those three git rules.
+4. **PM tool** (only with the `pm` module). Ask where the backlog should live. The default is Linear; Notion, Jira, GitHub Issues or any other tool with an MCP server work too (`existing.mcpServers` lists project-scoped servers as a hint). For a tool, set `has.pmTool` to true, `PM_TOOL` to its name, and `PM_SCOPE` to where this project's items live (a project, team, board or database). Ask for the scope even when the workspace looks dedicated, because the persona filters every query by it. Tell the owner the persona reaches the tool only through its MCP server, signed in with their own OAuth login, and that no token goes in any file. Check that the server is connected in this session: if its tools aren't available, give the owner the steps to connect it (a claude.ai connector, or `claude mcp add`), and go on with the install anyway. If the owner wants no PM tool, set `has.pmTool` to false: the backlog becomes `docs/backlog.md`, which the persona manages as plain Markdown.
+5. **Allow list.** Propose `ALLOW_RULES_JSON` from the local commands found (the checks, install, dev server) plus `Bash(git status)`, `Bash(git diff *)` and `Bash(git log *)`. If you leave it out, the renderer uses the checks plus those three git rules.
 
 Write the answers file:
 
@@ -82,9 +83,11 @@ Run `render.mjs apply`. It creates new files, writes `<file>.kit-new` beside exi
 
 ## 7. Merge and decide existing files
 
-For each `merge` target (for example `AGENTS.md`, `CLAUDE.md`, `docs/next-steps.md`, `.github/pull_request_template.md`): the kit's `<file>.kit-new` is the skeleton. Fold every rule, fact and command from the project's existing file into the matching section (project rules, do-not list, stack, layout). Drop nothing silently: list what you dropped or rewrote and why. Rules from other providers' files (`.cursorrules`, `.github/copilot-instructions.md` and similar) belong in `AGENTS.md`; ask whether to delete the old file. Write the result to the target and delete the `.kit-new`.
+For each `merge` target (for example `AGENTS.md`, `CLAUDE.md`, `docs/next-steps.md`, `docs/backlog.md`, `.github/pull_request_template.md`): the kit's `<file>.kit-new` is the skeleton. Fold every rule, fact and command from the project's existing file into the matching section (project rules, do-not list, stack, layout). Drop nothing silently: list what you dropped or rewrote and why. Rules from other providers' files (`.cursorrules`, `.github/copilot-instructions.md` and similar) belong in `AGENTS.md`; ask whether to delete the old file. Write the result to the target and delete the `.kit-new`.
 
 For each `kit-new` target, show the diff and ask: take the kit's version, keep the project's, or merge. Then delete the `.kit-new`.
+
+With the `pm` module, open work moves to the backlog. While merging `docs/next-steps.md`, move every open-work item (TODO lists, ideas, known bugs) out of the handoff: into `docs/backlog.md` with `has.pmTool` false, or, with a PM tool, into a list you show the owner at hand-off, to file with `/pm intake` once the install merges. Never create items in the PM tool during the install.
 
 ## 8. Resolve every adapt marker
 

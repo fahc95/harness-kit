@@ -22,7 +22,7 @@ import {
   riskyAllowRules,
   SETTINGS_TARGET,
 } from "./render.mjs";
-import { exampleAnswers, kit, put, withTempRepo } from "./test-support.mjs";
+import { exampleAnswers, kit, markdownBacklogAnswers, put, withTempRepo } from "./test-support.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./render.mjs", import.meta.url));
 
@@ -96,7 +96,7 @@ describe("resolveAnswers", () => {
       assert.equal(r.flags[f], true, f);
     }
     assert.equal(r.flags["flow.gitFlow"], false);
-    assert.deepEqual(r.modules, ["core", "open-pr", "githooks-pre-push"]);
+    assert.deepEqual(r.modules, ["core", "open-pr", "githooks-pre-push", "pm"]);
   });
 
   test("check flags follow the commands that exist", () => {
@@ -181,7 +181,9 @@ describe("resolveAnswers", () => {
   });
 
   test("every token value from a full answer set passes the vocabulary", () => {
-    const r = resolve(exampleAnswers({ flags: { "has.db": true, "has.github": true, "flow.gitFlow": true } }));
+    const a = exampleAnswers();
+    a.flags["flow.gitFlow"] = true;
+    const r = resolve(a);
     for (const [n, v] of Object.entries(r.values)) assert.equal(valueError(kit.vocabulary.tokens[n], kit.vocabulary, v), null, n);
   });
 });
@@ -196,21 +198,27 @@ describe("envPrefixFrom", () => {
 });
 
 describe("renderAll", () => {
-  test("renders every file of every module with no token left and the registry's targets", () => {
-    const r = resolve(exampleAnswers({ modules: kit.registry.modules.map((m) => m.id), flags: { "has.db": true, "has.github": true, "flow.gitFlow": true, "has.container": true } }));
-    const { files, settings } = renderAll(kit, r);
-    const total = kit.registry.modules.reduce((n, m) => n + m.files.length, 0);
-    assert.equal(files.length, total);
-    for (const f of files) {
-      assert.ok(!f.omitted, f.target);
-      assert.ok(!f.content.includes("{{"), `${f.target}: token left`);
-      assert.ok(!/kit:(if|end)\b/.test(f.content), `${f.target}: kit:if left`);
-      if (!f.template.includes("{{")) assert.equal(f.target, deriveTarget(f.template));
-    }
-    assert.ok(files.some((f) => f.target === "docs/plans/2026-01-github-flow-migration.md"));
-    assert.equal(settings.length, 1);
-    assert.ok(settings[0].fragment.permissions.deny.includes("Read(**/.env)"));
-  });
+  for (const pmTool of [true, false]) {
+    test(`renders every file of every module with no token left and the registry's targets (has.pmTool ${pmTool})`, () => {
+      const a = pmTool ? exampleAnswers() : markdownBacklogAnswers();
+      a.modules = kit.registry.modules.map((m) => m.id);
+      Object.assign(a.flags, { "has.db": true, "has.github": true, "flow.gitFlow": true, "has.container": true });
+      const r = resolve(a);
+      const { files, settings } = renderAll(kit, r);
+      const total = kit.registry.modules.reduce((n, m) => n + m.files.length, 0);
+      assert.equal(files.length, total);
+      const omitted = files.filter((f) => f.omitted).map((f) => f.target);
+      assert.deepEqual(omitted, pmTool ? ["docs/backlog.md"] : []);
+      for (const f of files.filter((x) => !x.omitted)) {
+        assert.ok(!f.content.includes("{{"), `${f.target}: token left`);
+        assert.ok(!/kit:(if|end)\b/.test(f.content), `${f.target}: kit:if left`);
+        if (!f.template.includes("{{")) assert.equal(f.target, deriveTarget(f.template));
+      }
+      assert.ok(files.some((f) => f.target === "docs/plans/2026-01-github-flow-migration.md"));
+      assert.equal(settings.length, 1);
+      assert.ok(settings[0].fragment.permissions.deny.includes("Read(**/.env)"));
+    });
+  }
 
   test("omits files whose when flag is false", () => {
     const a = exampleAnswers();
@@ -260,17 +268,19 @@ describe("planInstall and applyPlan", () => {
       const r = resolve(exampleAnswers());
       const plan = planInstall(kit, r, root);
       const actions = new Set(plan.files.map((f) => f.action));
-      assert.deepEqual([...actions].sort(), ["create"]);
+      assert.deepEqual([...actions].sort(), ["create", "omit"]);
+      // With a PM tool the backlog lives there, so docs/backlog.md is not rendered.
+      assert.deepEqual(plan.files.filter((f) => f.action === "omit").map((f) => f.target), ["docs/backlog.md"]);
       assert.equal(plan.settings.action, "create");
       assert.deepEqual(plan.postInstall, [{ module: "githooks-pre-push", command: "git config core.hooksPath .githooks" }]);
       const written = applyPlan(plan, root);
-      assert.equal(written.length, plan.files.length + 1);
+      assert.equal(written.length, plan.files.filter((f) => f.action === "create").length + 1);
       assert.ok(fs.statSync(path.join(root, ".githooks/pre-push")).mode & 0o111);
       const settings = JSON.parse(fs.readFileSync(path.join(root, SETTINGS_TARGET), "utf8"));
       assert.deepEqual(settings.permissions.allow, r.values.ALLOW_RULES_JSON);
       // A second plan sees everything in place.
       const again = planInstall(kit, r, root);
-      assert.deepEqual([...new Set(again.files.map((f) => f.action))], ["unchanged"]);
+      assert.deepEqual([...new Set(again.files.map((f) => f.action))].sort(), ["omit", "unchanged"]);
       assert.equal(again.settings.action, "unchanged");
       assert.deepEqual(applyPlan(again, root), []);
     }));
