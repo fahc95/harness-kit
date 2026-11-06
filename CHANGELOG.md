@@ -2,7 +2,11 @@
 
 All notable changes to harness-kit. Versions follow `plugins/harness-kit/.claude-plugin/plugin.json` and `plugins/harness-kit/plugin.json`; bump both in the same PR as the entry.
 
-## 0.3.0 (unreleased)
+## 0.4.0 (unreleased)
+
+- Add modules to an existing install (ADR-005). `harness-init` no longer stops when `.agents/harness.json` exists: it offers the modules not installed yet. `manifest.mjs answers` prints the install's recorded answers as the starting point; the answers file names the new modules in `add`. In add mode, `render.mjs` installs only the added modules' files (plus installed modules' files that apply only now, for example after the owner confirms `has.container`), and reports each installed file whose render changes as a `delta` with a line diff the installer applies by hand, never re-rendering an adapted file. `manifest.mjs check` also waits for every delta, and `write` updates the record: new entries (with `kitVersion` when the kit is newer than the install), new `installed` hashes for files that took a delta, merged values, the new flags and a `history` of the install and each add.
+
+## 0.3.0
 
 - Google Antigravity optimization (ADR-004):
   - Native Antigravity plugin manifest (`plugins/harness-kit/plugin.json`), kept in sync with `.claude-plugin/plugin.json` by `template-lint.test.mjs`, and provider-agnostic path and scratch resolution in `skills/harness-init/SKILL.md`.

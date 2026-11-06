@@ -3,7 +3,7 @@ name: harness-init
 description: Install the harness-kit agentic development harness (AGENTS.md, GEMINI.md, CLAUDE.md, personas, skills, rules, guard hooks, memory) into the current repo, adapted to it, on a fresh branch for a PR. Run only when the owner asks for it.
 disable-model-invocation: true
 argument-hint: "[path to the target repo, default: current directory]"
-allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/detect.mjs *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render.mjs plan *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render.mjs show *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/manifest.mjs check *) Bash(git status *) Bash(git fetch *) Bash(git config --get *) Bash(git diff *) Bash(git log *)
+allowed-tools: Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/detect.mjs *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render.mjs plan *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/render.mjs show *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/manifest.mjs check *) Bash(node ${CLAUDE_PLUGIN_ROOT}/scripts/manifest.mjs answers *) Bash(git status *) Bash(git fetch *) Bash(git config --get *) Bash(git diff *) Bash(git log *)
 ---
 
 # harness-init
@@ -33,7 +33,7 @@ Keep the answers in `${CLAUDE_PLUGIN_DATA}/installs/${CLAUDE_SESSION_ID}/answers
 Run `git fetch origin`, then `detect.mjs`, and read `git` in the report. Stop and tell the owner what to do if any of these fail:
 
 - `isRepo` is true.
-- `existing.harnessManifest` is null. If the repo already has `.agents/harness.json`, it was installed before; upgrading an install is not supported yet.
+- `existing.harnessManifest` is null. If the repo already has `.agents/harness.json`, it was installed before: follow [Add modules to an existing install](#add-modules-to-an-existing-install) instead of steps 2 to 10. Upgrading an install's existing files to a newer kit is not supported yet.
 - `clean` is true (list `dirty`).
 - `branch` is not `main` (or `defaultBranch`), `behindBase` is 0 and `aheadOfBase` is 0: a fresh branch cut from an up-to-date `main`.
 - `linkedWorktree` is true. If not, recommend a worktree so the main checkout stays on `main`, and suggest the exact command, for example `git worktree add ../<repo>-harness -b <prefix>/chore-adopt-harness-kit origin/main`. Continue in the main checkout only if the owner says so.
@@ -114,3 +114,15 @@ For each `postInstall` entry in the plan, propose it and run it only with approv
 ## 12. Hand off
 
 Summarize: modules installed, files created and merged, decisions the owner made, rejected commands, baseline results, and open items (also written to `docs/next-steps.md`). Propose a Conventional Commit, for example `chore: adopt harness-kit v<version>`, and a PR following the repo's template. Commit, push and open the PR only when the owner says to.
+
+## Add modules to an existing install
+
+For a repo that already has `.agents/harness.json` (ADR-005). Step 1's other checks still apply: a clean, fresh branch, ideally in a worktree, for example `<prefix>/chore-add-<module>`.
+
+1. **Starting answers.** Run `node <kit-root>/scripts/manifest.mjs answers --repo <repo>` and save the output as the answers file. It holds the install's modules, values, flags and date. Tell the owner which kit version installed the repo (`existing.harnessManifest.kitVersion`) and which version is running.
+2. **Pick modules.** Offer each module from `modules.json` that isn't installed, by its `offer` text, as in step 4 of the full install (respect `when` and `requires`). Add the chosen ids to `modules` and list them in `add`. Read the project (step 2) only as far as the new modules need.
+3. **Flags and values.** Ask only what the new modules need: their tokens from `vocabulary.json`, and any flag they depend on that is false or stale in the recorded answers (for example `has.container` when a `Dockerfile` arrived after the install). Show the detect evidence. Leave every other recorded value as it is.
+4. **Plan.** Run `render.mjs plan`. Show the owner a table by action: the added modules' files (`create`, `merge`, `kit-new`, `skip`), installed files that apply only now, `delta` files, `missing` files (a delta whose target the project deleted: ask whether to recreate it) and `retired` files (they no longer apply; the owner decides whether to delete them). For each delta, show `render.mjs show --target <file>`: a line diff between the file as the kit rendered it before and with the new answers.
+5. **Render.** Run `render.mjs apply`. It writes the new files and `.kit-new` files and merges the added settings fragments. It never touches a delta file.
+6. **Apply the deltas.** For each delta, make the same change in the installed file by hand, fitted to how the project adapted it, and show the owner the result. Then merge `.kit-new` files and resolve `kit:adapt` markers in the new files (steps 7 and 8).
+7. **Finish.** Repeat `manifest.mjs check` until `"done": true` (it also lists `unappliedDeltas`). Run the harness tests and the baseline checks (step 9), then `manifest.mjs write`, which updates the record and its `history`. Then steps 11 and 12 for the added modules, with a commit like `chore: add <module> from harness-kit v<version>`.

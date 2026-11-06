@@ -61,3 +61,4 @@ How templates under `plugins/harness-kit/templates/` are written. The machine-re
 - An existing target is never overwritten. `merge` and `kit-new` write the kit's version to `<target>.kit-new`; `skip` keeps the file.
 - Settings fragments merge into `.claude/settings.json`: arrays gain missing items, and a differing scalar keeps the project's value and is reported.
 - `manifest.mjs` writes `.agents/harness.json` only once no `kit:adapt` marker, `.kit-new` file or missing target remains.
+- Add mode (ADR-005): an answers file with `add` installs only those modules into a repo that has a manifest. Installed files are never re-rendered: a file whose render changes becomes a `delta` with a line diff the installer applies by hand, and `manifest.mjs write` updates the record instead of replacing it.
