@@ -268,6 +268,216 @@
       "description": "Where this project's items live in the PM tool (a project, team, board or database), so the pm persona never touches other projects' items in a shared workspace.",
       "source": "answers",
       "example": "the Example App project in team ENG"
+    },
+    "VERIFY_DOCKERFILE": {
+      "type": "path",
+      "description": "The Dockerfile that builds the production image, for smoke-local and e2e-verify --docker.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": "Dockerfile"
+    },
+    "VERIFY_APP_PORT": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{3,4}$",
+      "description": "The port the app listens on inside the production container.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": "3000"
+    },
+    "VERIFY_HEALTH_PATH": {
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9_./-]*$",
+      "description": "The path that answers 200 once the app is up (a health route, or / when there is none).",
+      "source": "detect (a health route in the source), confirmed by the owner",
+      "example": "/healthz"
+    },
+    "VERIFY_DB_ENGINE": {
+      "type": "string",
+      "pattern": "^(none|postgres)$",
+      "description": "The throwaway database the verify skills start: postgres, or none for an app without one.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": "postgres"
+    },
+    "VERIFY_DB_IMAGE": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9._-]+)?$",
+      "description": "The image of the throwaway database, matching production's major version.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": "postgres:16-alpine"
+    },
+    "VERIFY_DB_URL_ENV": {
+      "type": "identifier",
+      "pattern": "^[A-Z_][A-Z0-9_]*$",
+      "description": "The env var the app reads its database URL from.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": "DATABASE_URL"
+    },
+    "VERIFY_SECRET_ENV_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Z_][A-Z0-9_]*$",
+      "description": "Env vars that get a fake secret when the verify skills boot the app (auth secrets, signing keys).",
+      "source": "detect (.env.example names with SECRET, KEY or TOKEN), confirmed by the owner",
+      "example": [
+        "APP_SECRET"
+      ]
+    },
+    "VERIFY_LOCAL_URL_ENV_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Z_][A-Z0-9_]*$",
+      "description": "Env vars that get the local app URL (http://localhost:<port>) when the verify skills boot the app.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": [
+        "APP_URL"
+      ]
+    },
+    "VERIFY_BUILD_ARG_URL_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Z_][A-Z0-9_]*$",
+      "description": "Docker build args that get the local app URL, for URLs baked into the client bundle at build time.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": [
+        "PUBLIC_APP_URL"
+      ]
+    },
+    "VERIFY_EXTRA_ENV_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Z_][A-Z0-9_]*=[^\\s:@]*$",
+      "description": "Fixed NAME=value pairs the app needs to boot locally. Never a secret or a URL: no spaces, colons or @.",
+      "source": "detect (Dockerfile, .env.example, package scripts), confirmed by the owner",
+      "example": [
+        "UPLOAD_DIR=/tmp/uploads"
+      ]
+    },
+    "VERIFY_CONTAINER_MIGRATE_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
+      "commandItems": true,
+      "description": "Commands run in a one-off container of the production image before it boots, for images whose entrypoint doesn't migrate. Empty when the entrypoint does.",
+      "source": "detect (the Dockerfile entrypoint), confirmed by the owner",
+      "example": [
+        "node dist/migrate.js"
+      ]
+    },
+    "SMOKE_SECOND_BOOT": {
+      "type": "string",
+      "pattern": "^(true|false)$",
+      "description": "Whether smoke-local boots the image a second time on the same database, proving migrations are a no-op and the seed re-runs.",
+      "source": "answers",
+      "example": "true"
+    },
+    "SMOKE_MUST_FAIL_WITHOUT_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Z_][A-Z0-9_]*$",
+      "description": "Required secrets: a boot without each one must fail, never answer 200.",
+      "source": "detect (.env.example), confirmed by the owner",
+      "example": [
+        "APP_SECRET"
+      ]
+    },
+    "E2E_MODE": {
+      "type": "string",
+      "pattern": "^(host|docker)$",
+      "description": "How e2e-verify serves the app by default: the production build on the host (fast), or the production image (full parity).",
+      "source": "answers",
+      "example": "host"
+    },
+    "E2E_SETUP_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
+      "commandItems": true,
+      "description": "Host commands that prepare the throwaway database for e2e-verify (migrate, seed). Local only: the database URL points at the throwaway container.",
+      "source": "detect (package scripts), confirmed by the owner",
+      "example": [
+        "npm run db:migrate"
+      ]
+    },
+    "E2E_BUILD_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
+      "commandItems": true,
+      "description": "Host commands that build the production app for e2e-verify.",
+      "source": "detect (package scripts), confirmed by the owner",
+      "example": [
+        "npm run build"
+      ]
+    },
+    "E2E_START_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$",
+      "commandItems": true,
+      "description": "The one host command that serves the built app for e2e-verify (empty only in docker mode). It gets PORT; see E2E_START_PORT_ARGS_JSON when it ignores it.",
+      "source": "detect (package scripts), confirmed by the owner",
+      "example": [
+        "node dist/server.js"
+      ]
+    },
+    "E2E_START_PORT_ARGS_JSON": {
+      "type": "json-array",
+      "itemPattern": "^-{1,2}[A-Za-z][A-Za-z0-9-]*=?$",
+      "description": "Flags e2e-verify puts before the port on the start command, for servers that ignore PORT (for example --port). Empty when PORT works.",
+      "source": "detect (package scripts), confirmed by the owner",
+      "example": []
+    },
+    "E2E_TEST_COMMAND": {
+      "type": "command",
+      "description": "The command that runs the E2E suite. It reads E2E_BASE_URL and E2E_ARTIFACT_DIR.",
+      "source": "detect (test runner config), confirmed by the owner",
+      "example": "npx playwright test"
+    },
+    "BACKUP_ENGINE": {
+      "type": "string",
+      "pattern": "^postgres$",
+      "description": "The production database engine db-backup dumps. Only postgres is supported.",
+      "source": "detect, confirmed by the owner",
+      "example": "postgres"
+    },
+    "BACKUP_NAME": {
+      "type": "identifier",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "A lowercase slug for dump file names and the default backup folder (~/Backups/<name>/db).",
+      "source": "derived from PROJECT_NAME, confirmed by the owner",
+      "example": "example-app"
+    },
+    "BACKUP_ENV_FILE": {
+      "type": "path",
+      "description": "The repo-relative, git-ignored env file the owner puts the production URL in. Only the db-backup script reads it.",
+      "source": "answers",
+      "example": ".env.backup.local"
+    },
+    "BACKUP_URL_ENV_JSON": {
+      "type": "json-array",
+      "itemPattern": "^[A-Z_][A-Z0-9_]*$",
+      "description": "Variable names in the backup env file to take the production URL from, in order.",
+      "source": "answers",
+      "example": [
+        "BACKUP_DATABASE_URL"
+      ]
+    },
+    "BACKUP_DIR_ENV": {
+      "type": "identifier",
+      "pattern": "^[A-Z_][A-Z0-9_]*$",
+      "description": "The env var that overrides the backup folder.",
+      "source": "derived from ENV_PREFIX, confirmed by the owner",
+      "example": "EXAMPLE_APP_BACKUP_DIR"
+    },
+    "BACKUP_KEEP": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]?$",
+      "description": "How many dumps db-backup keeps.",
+      "source": "answers",
+      "example": "10"
+    },
+    "DB_PROVIDER": {
+      "type": "string",
+      "description": "Where the production database is hosted, by name, for db-backup's instructions.",
+      "source": "answers",
+      "example": "Example Cloud"
+    },
+    "DB_PROVIDER_MCP": {
+      "type": "string",
+      "when": "has.dbProviderMcp",
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "description": "The name of the database host provider's MCP server, as the owner connected it.",
+      "source": "answers",
+      "example": "example-cloud"
     }
   },
   "flags": {
@@ -329,6 +539,22 @@
     },
     "has.pmTool": {
       "description": "The backlog lives in an external PM tool reached through its MCP server. False means it lives in docs/backlog.md.",
+      "source": "answers"
+    },
+    "module.smokeLocal": {
+      "description": "The smoke-local module is installed.",
+      "source": "answers"
+    },
+    "module.endToEnd": {
+      "description": "The e2e-verify module is installed.",
+      "source": "answers"
+    },
+    "module.dbBackup": {
+      "description": "The db-backup module is installed.",
+      "source": "answers"
+    },
+    "has.dbProviderMcp": {
+      "description": "The database host provider has an MCP server the owner connects with their own login; db-backup uses it read-only for checks that expose no credential.",
       "source": "answers"
     }
   }

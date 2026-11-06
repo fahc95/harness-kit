@@ -562,3 +562,36 @@ describe("rendered common modules", () => {
       assert.match(fs.readFileSync(runbook, "utf8"), /## Manual steps for /);
     }));
 });
+
+describe("rendered verification modules", () => {
+  const VERIFY_LIB = "dot-agents/skills/%s/scripts/verify-lib.mjs.tmpl";
+  test("smoke-local and e2e-verify carry the same verify-lib", () => {
+    assert.equal(read(`common/smoke-local/${VERIFY_LIB.replace("%s", "smoke-local")}`), read(`common/e2e-verify/${VERIFY_LIB.replace("%s", "e2e-verify")}`));
+  });
+
+  for (const [id, tests, min] of [
+    ["smoke-local", [".agents/skills/smoke-local/scripts/smoke-local.test.mjs"], 10],
+    ["e2e-verify", [".agents/skills/e2e-verify/scripts/e2e-verify.test.mjs"], 12],
+    ["db-backup", [".agents/skills/db-backup/scripts/db-backup.test.mjs", ".agents/skills/db-backup/scripts/pg-creds.test.mjs"], 30],
+  ]) {
+    test(`${id}: its config renders to valid JSON and its tests pass`, () =>
+      withTempRepo((root) => {
+        renderModule(id, root, examples, allFlags(true));
+        const config = fs.readdirSync(path.join(root, ".agents/skills", id)).find((f) => f.endsWith(".json"));
+        JSON.parse(fs.readFileSync(path.join(root, ".agents/skills", id, config), "utf8"));
+        const passed = tests.reduce((n, t) => n + runRenderedTest(path.join(root, t)), 0);
+        assert.ok(passed >= min, `only ${passed} ${id} tests ran`);
+      }));
+  }
+
+  test("db-backup: the provider MCP section renders only with has.dbProviderMcp", () =>
+    withTempRepo((root) => {
+      renderModule("db-backup", root, examples, { ...allFlags(true), "has.dbProviderMcp": false });
+      const off = fs.readFileSync(path.join(root, ".agents/skills/db-backup/SKILL.md"), "utf8");
+      assert.ok(!off.includes("MCP server"));
+      renderModule("db-backup", root, examples, allFlags(true));
+      const on = fs.readFileSync(path.join(root, ".agents/skills/db-backup/SKILL.md"), "utf8");
+      assert.match(on, new RegExp(`\`${examples.DB_PROVIDER_MCP}\``));
+      assert.match(on, /Never call a tool that returns connection strings/);
+    }));
+});

@@ -1,0 +1,74 @@
+// Tests for e2e-verify's config and arguments. None of them needs Docker or a browser.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { CONFIG, checkNames, DEFAULTS, defaultArtifactDir, e2eConfigErrors, parseArgs } from "./e2e-verify.mjs";
+import { loadConfig, sharedConfigErrors, UsageError } from "./verify-lib.mjs";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT = path.join(HERE, "e2e-verify.mjs");
+const config = () => JSON.parse(fs.readFileSync(CONFIG, "utf8"));
+const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
+
+describe("e2e.json", () => {
+  test("the installed config is valid", () => {
+    const c = loadConfig(CONFIG, e2eConfigErrors);
+    assert.ok(["host", "docker"].includes(c.mode));
+  });
+
+  test("a broken config is refused with every problem named", () => {
+    const c = { ...config(), mode: "cloud", setup: ["rm -rf / ; echo"], start: ["a", "b"], startPortArgs: ["port"], test: "" };
+    const errors = e2eConfigErrors(c).join("\n");
+    for (const key of ["mode", "setup", "start", "startPortArgs", "test"]) assert.match(errors, new RegExp(`${key}:`));
+    assert.deepEqual(sharedConfigErrors(config()), []);
+  });
+
+  test("host mode needs a start command; docker mode doesn't", () => {
+    assert.match(e2eConfigErrors({ ...config(), mode: "host", start: [] }).join("\n"), /host mode needs a start command/);
+    assert.ok(!e2eConfigErrors({ ...config(), mode: "docker", start: [] }).join("\n").includes("host mode needs"));
+  });
+});
+
+describe("arguments", () => {
+  test("defaults, overrides and pass-through arguments", () => {
+    const o = parseArgs([]);
+    assert.equal(o.port, DEFAULTS.port);
+    assert.equal(o.dbPort, DEFAULTS.dbPort);
+    assert.equal(o.artifactDir, null);
+    assert.match(defaultArtifactDir("/x/my-app"), /my-app-e2e-latest$/);
+    const p = parseArgs(["--port", "4200", "--db-port", "4300", "--docker", "--", "e2e/a.spec.ts", "--headed"]);
+    assert.deepEqual([p.port, p.dbPort, p.docker, p.passThrough], [4200, 4300, true, ["e2e/a.spec.ts", "--headed"]]);
+  });
+
+  for (const [label, args] of [
+    ["missing --port value", ["--port"]],
+    ["port below 1024", ["--port", "80"]],
+    ["port above 65535", ["--port", "70000"]],
+    ["missing --db-port value", ["--db-port"]],
+    ["empty --artifact-dir", ["--artifact-dir", ""]],
+    ["unknown option", ["--nope"]],
+    ["the same port twice", ["--port", "4100", "--db-port", "4100"]],
+  ]) {
+    test(`rejects ${label}`, () => assert.throws(() => parseArgs(args), UsageError));
+  }
+
+  test("the CLI exits 2 with the usage for --help and bad arguments", () => {
+    for (const args of [["--help"], ["--port", "80"]]) {
+      const r = run(...args);
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /usage: node \.agents\/skills\/e2e-verify\/scripts\/e2e-verify\.mjs/);
+    }
+  });
+
+  test("the check list follows the mode and the config", () => {
+    const c = { ...config(), setup: ["node migrate.js"], build: ["node build.js"], containerMigrate: [] };
+    c.database = { ...c.database, engine: "postgres" };
+    assert.deepEqual(checkNames(c, false), ["db", "setup", "build", "boot", "e2e"]);
+    assert.deepEqual(checkNames(c, true), ["build", "db", "boot", "e2e"]);
+    const bare = { ...c, setup: [], build: [], database: { ...c.database, engine: "none" } };
+    assert.deepEqual(checkNames(bare, false), ["boot", "e2e"]);
+  });
+});

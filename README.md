@@ -71,7 +71,7 @@ harness-kit/
         ├── vocabulary.json           # every {{TOKEN}} and kit:if flag
         ├── modules.json              # the module registry
         ├── core/                     # AGENTS.md, .agents/ (personas, skills, rules, memory)
-        └── common/                   # claude, antigravity, open-pr, githooks-pre-push, pm, flow-migration
+        └── common/                   # claude, antigravity, open-pr, githooks-pre-push, pm, smoke-local, e2e-verify, db-backup, flow-migration
 ```
 
 Templates never sit in the plugin's top-level `agents/`, `hooks/`, `rules/` or `commands/` folders, because Antigravity and Claude Code would load those as live components in every project.
@@ -95,6 +95,7 @@ The full plan lives in the reference implementation's `docs/plans/2026-10-harnes
 - Google Antigravity or Claude Code with plugin support
 - Node 22 in the target project's environment (the guard hooks are `.mjs` scripts)
 - git, and the GitHub CLI for the `open-pr` module
+- Docker (Docker Desktop or OrbStack) for the `smoke-local`, `e2e-verify` and `db-backup` modules
 
 ## Reference implementation
 

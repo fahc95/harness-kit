@@ -104,3 +104,24 @@ Append-only ADR log for decisions about the kit itself. Decisions about the harn
 **Consequences**:
 - Easier: a project takes a new module in one PR, with every change to an existing file shown as a small diff.
 - Harder: a delta computed with a newer kit isolates only the add's own changes; upgrading the rest of the install to the newer kit is still a separate, unbuilt flow. The applied-delta check only looks for added lines.
+
+---
+
+## ADR-006: Verification Modules Are Generic Engines Plus a Discovered Config, and db-backup Is the One Owner-Invoked Production Read
+**Date**: 2026-11-06
+**Status**: Proposed
+
+**Context**: The reference implementation's `e2e-verify`, `smoke-local` and `db-backup` skills work well but hard-code its stack: its package manager and workspace names, its ORM's commands, its server, its health route, its auth secret, its env file and its hosting provider. The template contract allows only `identifier` tokens in shell templates, so the scripts can't be templated as they are. `db-backup` also reaches production by design, which the "Production stays out" hard rule didn't account for.
+
+**Decision**:
+1. Each skill is a generic engine shipped as a static template (Node `.mjs`, no tokens) plus a per-project JSON config (`smoke.json`, `e2e.json`, `backup.json`) rendered from `_JSON` tokens. Config commands are single command lines with no shell syntax, run without a shell, and checked against the production reject list at render time. smoke-local and e2e-verify each carry a copy of one shared `verify-lib.mjs`, and the lint keeps the copies identical.
+2. Engines are Node rather than bash: JSON configs parse natively, commands run as argument arrays, the macOS bash 3.2 limits go away, and the engines' tests run in the kit's lint on the rendered output without Docker.
+3. `detect.mjs` gains a read-only `verification` section (container, health route, database engine and image, `.env.example` names, scripts, E2E runner, local machine). The installer proposes every config value from it with its evidence and asks only about gaps. Unrecognized stacks fall back to the owner's answers, and `kit:adapt` markers cover what only the project can say (review checklists, risky paths, restore verification).
+4. Modules are gated by an existing flag (`has.container`, `has.ui`, `has.db`) and default to off. Each installed one is mentioned in `AGENTS.md` behind its module flag, which add mode turns into a delta.
+5. `db-backup` is the one owner-invoked, read-only production skill. It runs only when the owner invokes it; it is never in a guard profile, a tracked `permissions.allow` (only `--check` is pre-approved in the Claude adapter), a schedule or an agent's own initiative. The URL lives in a git-ignored env file the owner fills by hand; the script refuses a tracked or un-ignored file, keeps the URL inside its own process, and redacts errors. The host provider's MCP server, when the owner uses one, is allowed read-only and only for checks that return no credential, because an MCP tool result lands in the agent's context.
+
+**Alternatives considered**: templating the reference bash scripts with new token types (widens the shell token rule for little gain); letting the model write each project's scripts at install time (unreviewable, untested output that drifts per project); one combined verification module (forces container and UI assumptions on projects that have only one); reading the URL through the provider's MCP server (puts the credential in the conversation).
+
+**Consequences**:
+- Easier: a project gets tested engines and changes its behavior by editing a small JSON file in a PR; the kit tests every engine on every change.
+- Harder: Postgres is the only database engine for the throwaway servers and the backup; another engine needs engine code, not just config. A start script that ignores `PORT` needs `E2E_START_PORT_ARGS_JSON`. The two `verify-lib.mjs` copies must change together.

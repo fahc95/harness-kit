@@ -1,0 +1,82 @@
+---
+name: e2e-verify
+description: Run the end-to-end browser suite against a production build and a throwaway database, then review the state screenshots it writes for layout and copy problems. Reads the PR or plan acceptance criteria first. Use when verifying a branch or PR that changes user-facing routes, multi-step flows, auth or session redirects, or UI states.
+---
+
+# Skill: e2e-verify, self-contained end-to-end and visual verification
+
+This skill proves user flows in a real browser against the production build, then has you look at what was rendered. It never touches the dev database or a running dev server: the database is a throwaway container in tmpfs, and the app runs on its own port.
+
+## When to run
+
+- Verifying a branch or PR that adds or changes user-facing routes, multi-step or multi-user flows, auth or session redirects, or complex UI states.
+- When {{OWNER}} asks to verify a branch or PR end to end before merging.
+- Before opening a PR for a user-facing change that an E2E spec covers.
+
+## What it does
+
+`node .agents/skills/e2e-verify/scripts/e2e-verify.mjs` runs on the current checkout. Everything project-specific is in `e2e.json` next to this file.
+
+1. **Preflight:** the config is valid, Docker is running, the app port (default 3101) and database port (default 54330) are free, and the artifact folder is outside the repo.
+2. **db:** a throwaway database bound only to `127.0.0.1`, data in tmpfs.
+3. **setup:** the configured commands that prepare it (migrations, seed), with the database URL pointing at it.
+4. **build and boot:** by default (`mode`), either the production build served on the host (`build`, then `start`), or, with `--docker`, the production image on a private network, the same boot as smoke-local. It polls the health path until it answers 200. Secrets are fake, and outbound services get no real keys.
+5. **e2e:** the configured test command, with `E2E_BASE_URL` set to the app and `E2E_ARTIFACT_DIR` set to the artifact folder. Specs write their state screenshots there.
+6. **Cleanup:** the server, containers and network are removed on pass, fail or Ctrl-C.
+
+## Step by step
+
+### 1. Gather acceptance criteria
+
+<!-- kit:if module.openPr -->
+- For a PR, read its description and changed files (`gh pr view <n> --json title,body,files`) and the linked plan in `docs/plans/`.
+<!-- kit:end -->
+<!-- kit:if !module.openPr -->
+- For a branch or PR, read its description and the linked plan in `docs/plans/`.
+<!-- kit:end -->
+<!-- kit:adapt: Say where committed E2E specs live in this repo and how they are named (for example e2e/<feature>.e2e.ts), and that one-off exploratory specs go in the artifact folder and are deleted before finishing. -->
+- In every spec, save full-page screenshots at the key states into `process.env.E2E_ARTIFACT_DIR`, numbered in order (`01-<state>.png`, `02-<state>.png`).
+
+### 2. Run it
+
+From the checkout root:
+
+    node .agents/skills/e2e-verify/scripts/e2e-verify.mjs
+
+Pass arguments to the test runner after `--`, for example one spec file:
+
+    node .agents/skills/e2e-verify/scripts/e2e-verify.mjs -- <path to one spec>
+
+<!-- kit:adapt: Give the one-time command that installs the test runner's browser in this repo (for example the runner's install command for chromium), and any machine-specific note (WSL libraries, an nvm Node version). -->
+
+### 3. Review the screenshots
+
+After `e2e-verify: PASS`, open **every** listed screenshot with your file-reading tool and check what was actually rendered:
+
+<!-- kit:adapt: Write the visual review checklist for this project: the viewport and device the specs emulate, layout rules (no horizontal overflow, clipped text or overlapping elements, primary actions reachable), and the copy rules (language, tone, regional spelling, no raw keys or untranslated strings). One bullet each. -->
+
+### 4. Report
+
+Give {{OWNER}} a short verification summary:
+
+- The check table as printed (`db`, `setup`, `build`, `boot`, `e2e`).
+- Each acceptance criterion and the assertion or screenshot that proves it.
+- Visual findings from the screenshots, each with the file name.
+- What still needs a human on a real device (haptics, native app handoffs, real network or sunlight conditions).
+
+On a failure, quote the failing check and the log lines that matter, not the whole log.
+
+## The config
+
+`e2e.json` was written when the kit installed this skill. Change it in a normal PR when the build or boot changes. Besides the keys it shares with smoke-local (`dockerfile`, `appPort`, `healthPath`, `database`, `secretEnv`, `localUrlEnv`, `buildArgUrl`, `extraEnv`, `containerMigrate`):
+
+- `mode`: `host` or `docker`, the default way to serve the app.
+- `setup` and `build`: host commands, one line each, no shell syntax.
+- `start`: the one host command that serves the built app; `startPortArgs` puts the port on its command line when it ignores `PORT` (for example `["--port"]`).
+- `test`: the command that runs the suite.
+
+## Rules
+
+- Never pass a real secret or a production database URL to the script, and never put one in the config.
+- Never commit screenshots or traces. The artifact folder lives outside the repo, and the script refuses one inside it.
+- The unit test command stays fast; E2E specs live apart from unit tests and run only here or in CI.

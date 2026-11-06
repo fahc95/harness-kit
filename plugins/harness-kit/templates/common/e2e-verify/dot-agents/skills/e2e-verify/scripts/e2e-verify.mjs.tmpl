@@ -1,0 +1,247 @@
+#!/usr/bin/env node
+// e2e-verify: self-contained end-to-end browser verification (.agents/skills/e2e-verify/SKILL.md).
+// Boots a throwaway database, prepares it, builds and serves the production app (on the host,
+// or as the production image with --docker), runs the E2E suite against it, writes state
+// screenshots to an artifact folder outside the repo, and tears everything down on exit.
+//
+//   node .agents/skills/e2e-verify/scripts/e2e-verify.mjs [options] [-- <test-runner args>...]
+//
+// Exit codes: 0 all checks passed, 1 a check failed, 2 preflight or bad arguments.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  appEnv,
+  Checks,
+  COMMAND_RE,
+  docker,
+  dockerRunning,
+  envFlags,
+  httpStatus,
+  insideRepo,
+  isPort,
+  loadConfig,
+  portBusy,
+  postgresUrl,
+  repoRoot,
+  runLogged,
+  saveLogs,
+  sleep,
+  splitCommand,
+  startLogged,
+  startPostgres,
+  stopProcess,
+  UsageError,
+  withCleanup,
+  workDir,
+} from "./verify-lib.mjs";
+
+export const CONFIG = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "e2e.json");
+export const DEFAULTS = { port: 3101, dbPort: 54330 };
+const HEALTH_TRIES = 90;
+const HEALTH_SLEEP_MS = 1000;
+const USAGE = `usage: node .agents/skills/e2e-verify/scripts/e2e-verify.mjs [options] [-- <test-runner args>...]
+
+options:
+  --port <1024-65535>      local port for the production app (default: ${DEFAULTS.port})
+  --db-port <1024-65535>   local port for the throwaway database in host mode (default: ${DEFAULTS.dbPort})
+  --artifact-dir <path>    folder outside the repo for screenshots and traces
+  --docker                 boot the production image instead of serving the build on the host
+  -h, --help               show this help`;
+
+const commands = (v) => Array.isArray(v) && v.every((x) => typeof x === "string" && COMMAND_RE.test(x));
+
+/** e2e.json's own keys, on top of the shared ones. */
+export const e2eConfigErrors = (c) => {
+  const errors = [];
+  if (!["host", "docker"].includes(c.mode)) errors.push('mode: "host" or "docker", the default way to serve the app');
+  if (!commands(c.setup)) errors.push("setup: host commands that prepare the database (migrate, seed)");
+  if (!commands(c.build)) errors.push("build: host commands that build the production app");
+  if (!commands(c.start) || c.start.length > 1) errors.push("start: at most one host command that serves the built app");
+  if (!Array.isArray(c.startPortArgs) || !c.startPortArgs.every((x) => typeof x === "string" && /^-{1,2}[A-Za-z][A-Za-z0-9-]*=?$/.test(x))) {
+    errors.push('startPortArgs: flags put before the port, for a start command that ignores PORT (for example ["--port"])');
+  }
+  if (typeof c.test !== "string" || !COMMAND_RE.test(c.test)) errors.push("test: the command that runs the E2E suite");
+  if (c.mode === "host" && commands(c.start) && c.start.length === 0) errors.push("start: host mode needs a start command");
+  return errors;
+};
+
+/** The default artifact folder: <tmp>/<repo folder name>-e2e-latest. */
+export const defaultArtifactDir = (root) => path.join(fs.realpathSync(os.tmpdir()), `${path.basename(root)}-e2e-latest`);
+
+export function parseArgs(argv) {
+  const opts = { ...DEFAULTS, artifactDir: null, docker: null, passThrough: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--port" && isPort(argv[i + 1])) opts.port = Number(argv[++i]);
+    else if (a === "--db-port" && isPort(argv[i + 1])) opts.dbPort = Number(argv[++i]);
+    else if (a === "--artifact-dir" && argv[i + 1]) opts.artifactDir = path.resolve(argv[++i]);
+    else if (a === "--docker") opts.docker = true;
+    else if (a === "--") {
+      opts.passThrough = argv.slice(i + 1);
+      break;
+    } else throw new UsageError(USAGE);
+  }
+  if (opts.port === opts.dbPort) throw new UsageError(`--port and --db-port must be different (${opts.port})`);
+  return opts;
+}
+
+/** The checks a run makes, in order. */
+export const checkNames = (c, useDocker) =>
+  useDocker
+    ? ["build", ...(c.database.engine === "none" ? [] : ["db"]), ...(c.containerMigrate.length ? ["migrate"] : []), "boot", "e2e"]
+    : [...(c.database.engine === "none" ? [] : ["db"]), ...(c.setup.length ? ["setup"] : []), ...(c.build.length ? ["build"] : []), "boot", "e2e"];
+
+async function main(argv) {
+  if (argv.includes("-h") || argv.includes("--help")) throw new UsageError(USAGE);
+  const opts = parseArgs(argv);
+  const root = repoRoot();
+  opts.artifactDir ??= defaultArtifactDir(root);
+  const c = loadConfig(CONFIG, e2eConfigErrors);
+  const useDocker = opts.docker ?? c.mode === "docker";
+  if (insideRepo(opts.artifactDir, root)) throw new UsageError("the artifact folder must be outside the repo (screenshots are never committed)");
+  if (!dockerRunning() && (useDocker || c.database.engine !== "none")) {
+    throw new UsageError("preflight failed: Docker is not running (start Docker Desktop or OrbStack)");
+  }
+  if (await portBusy(opts.port)) throw new UsageError(`preflight failed: port ${opts.port} is busy (use --port <n>)`);
+  if (!useDocker && c.database.engine !== "none" && (await portBusy(opts.dbPort))) {
+    throw new UsageError(`preflight failed: db-port ${opts.dbPort} is busy (use --db-port <n>)`);
+  }
+  fs.mkdirSync(opts.artifactDir, { recursive: true });
+  for (const f of fs.readdirSync(opts.artifactDir)) if (f.endsWith(".png")) fs.rmSync(path.join(opts.artifactDir, f));
+
+  const url = `http://localhost:${opts.port}`;
+  const id = `e2e-${process.pid}`;
+  const checks = new Checks(checkNames(c, useDocker));
+
+  return withCleanup("e2e-verify", async (state) => {
+    state.work = workDir("e2e-verify");
+    const log = (name) => path.join(state.work, `${name}.log`);
+    let t = Date.now();
+    const secs = () => Math.round((Date.now() - t) / 1000);
+    let dbUrl;
+    let ready = true;
+
+    if (useDocker) {
+      // Production image on a private network, the same boot as smoke-local.
+      const net = `${id}-net`;
+      const image = `harness-e2e-${path.basename(root).toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}:latest`;
+      const buildArgs = c.buildArgUrl.flatMap((n) => ["--build-arg", `${n}=${url}`]);
+      const b = docker(["build", "--progress=plain", "-f", c.dockerfile, ...buildArgs, "-t", image, "."], { cwd: root });
+      fs.writeFileSync(log("build"), `${b.stdout}${b.stderr}`);
+      checks.record("build", b.status === 0, b.status === 0 ? `${secs()}s (docker)` : `docker build failed after ${secs()}s`, log("build"));
+      ready = b.status === 0;
+      if (ready) {
+        docker(["network", "create", net]);
+        state.cleanups.push(() => docker(["network", "rm", net]));
+      }
+      if (ready && c.database.engine !== "none") {
+        const name = `${id}-db`;
+        state.cleanups.push(() => docker(["rm", "-f", "-v", name]));
+        const r = await startPostgres({ name, image: c.database.image, network: net });
+        saveLogs(name, log("db"));
+        checks.record("db", r.ok, r.ok ? `ready after ${r.seconds}s` : r.error, log("db"));
+        dbUrl = postgresUrl("db", 5432);
+        ready = r.ok;
+      }
+      const env = appEnv(c, { url, dbUrl, port: c.appPort });
+      if (ready && c.containerMigrate.length) {
+        t = Date.now();
+        ready = c.containerMigrate.every((cmd) => {
+          const r = docker(["run", "--rm", "--network", net, ...envFlags(env), image, ...splitCommand(cmd)]);
+          fs.appendFileSync(log("migrate"), `$ ${cmd}\n${r.stdout}${r.stderr}`);
+          return r.status === 0;
+        });
+        checks.record("migrate", ready, ready ? `${secs()}s` : `a migrate command failed after ${secs()}s`, log("migrate"));
+      }
+      if (ready) {
+        const name = `${id}-app`;
+        state.cleanups.push(() => docker(["rm", "-f", "-v", name]));
+        docker(["run", "-d", "--name", name, "--network", net, "-p", `127.0.0.1:${opts.port}:${c.appPort}`, ...envFlags(env), image]);
+        t = Date.now();
+        let ok = false;
+        for (let i = 0; i < HEALTH_TRIES; i++) {
+          if (docker(["inspect", "-f", "{" + "{.State.Running}}", name]).stdout.trim() !== "true") break;
+          if ((await httpStatus(`http://127.0.0.1:${opts.port}${c.healthPath}`)) === 200) {
+            ok = true;
+            break;
+          }
+          await sleep(HEALTH_SLEEP_MS);
+        }
+        saveLogs(name, log("boot"));
+        checks.record("boot", ok, ok ? `healthy after ${secs()}s (docker)` : `not healthy after ${secs()}s`, log("boot"));
+        ready = ok;
+      }
+    } else {
+      // Host mode: the production build served on the host, against a database on a host port.
+      if (c.database.engine !== "none") {
+        const name = `${id}-db`;
+        state.cleanups.push(() => docker(["rm", "-f", "-v", name]));
+        const r = await startPostgres({ name, image: c.database.image, hostPort: opts.dbPort });
+        saveLogs(name, log("db"));
+        checks.record("db", r.ok, r.ok ? `ready after ${r.seconds}s (127.0.0.1:${opts.dbPort})` : r.error, log("db"));
+        dbUrl = postgresUrl("127.0.0.1", opts.dbPort);
+        ready = r.ok;
+      }
+      const hostEnv = appEnv(c, { url, dbUrl, production: false });
+      for (const [check, list] of [
+        ["setup", c.setup],
+        ["build", c.build],
+      ]) {
+        if (!ready || !list.length) continue;
+        t = Date.now();
+        ready = list.every((cmd) => runLogged(cmd, { cwd: root, env: hostEnv, log: log(check) }) === 0);
+        checks.record(check, ready, ready ? `${secs()}s` : `a ${check} command failed after ${secs()}s`, log(check));
+      }
+      if (ready) {
+        const portArgs = c.startPortArgs.flatMap((f) => (f.endsWith("=") ? [`${f}${opts.port}`] : [f, String(opts.port)]));
+        const child = startLogged(c.start[0], portArgs, { cwd: root, env: appEnv(c, { url, dbUrl, port: opts.port }), log: log("boot") });
+        state.cleanups.push(() => stopProcess(child));
+        t = Date.now();
+        let ok = false;
+        for (let i = 0; i < HEALTH_TRIES; i++) {
+          if (child.exitCode !== null) break;
+          if ((await httpStatus(`http://127.0.0.1:${opts.port}${c.healthPath}`)) === 200) {
+            ok = true;
+            break;
+          }
+          await sleep(HEALTH_SLEEP_MS);
+        }
+        checks.record("boot", ok, ok ? `healthy after ${secs()}s (${url})` : `${c.healthPath} didn't answer 200 after ${secs()}s`, log("boot"));
+        ready = ok;
+      }
+    }
+
+    if (ready) {
+      t = Date.now();
+      const env = { E2E_BASE_URL: url, E2E_ARTIFACT_DIR: opts.artifactDir };
+      const cmd = [c.test, ...opts.passThrough].join(" ");
+      const status = runLogged(cmd, { cwd: root, env, log: log("e2e") });
+      const shots = fs.readdirSync(opts.artifactDir).filter((f) => f.endsWith(".png"));
+      checks.record("e2e", status === 0, status === 0 ? `${secs()}s (${shots.length} screenshots)` : `the suite failed after ${secs()}s`, log("e2e"));
+    }
+
+    state.ok = checks.allPassed;
+    let out = checks.summary("e2e-verify");
+    if (state.ok) {
+      for (const f of fs.readdirSync(opts.artifactDir).filter((x) => x.endsWith(".png")).sort()) {
+        out += `\n  screenshot ${path.join(opts.artifactDir, f)}`;
+      }
+    }
+    process.stdout.write(`${out}\n`);
+    return state.ok ? 0 : 1;
+  });
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (e) => {
+      process.stderr.write(`e2e-verify: ${e.message}\n`);
+      process.exitCode = e instanceof UsageError ? 2 : 1;
+    },
+  );
+}
