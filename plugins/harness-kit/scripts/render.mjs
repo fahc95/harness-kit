@@ -27,15 +27,17 @@ export const KIT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)
 export const SETTINGS_TARGET = ".claude/settings.json";
 /** Suffix of the kit's version of a file the target already has (merge and kit-new). */
 export const KIT_NEW = ".kit-new";
+/** The install record (written by manifest.mjs); add mode reads it to know what is installed. */
+export const MANIFEST_TARGET = ".agents/harness.json";
 
 // Tokens and flags the renderer computes; answers may not set them.
-const DERIVED_TOKENS = ["KIT_VERSION", "DATE", "DATE_YM", "CMD_CHECKS", "CMD_HOOK_TESTS", "VERIFY_COMMANDS_JSON"];
+export const DERIVED_TOKENS =["KIT_VERSION", "DATE", "DATE_YM", "CMD_CHECKS", "CMD_HOOK_TESTS", "VERIFY_COMMANDS_JSON"];
 const CHECKS = [
   ["CMD_TYPECHECK", "has.typecheck"],
   ["CMD_LINT", "has.lint"],
   ["CMD_TEST", "has.test"],
 ];
-const DERIVED_FLAGS = ["has.typecheck", "has.lint", "has.test", "has.checks"];
+export const DERIVED_FLAGS = ["has.typecheck", "has.lint", "has.test", "has.checks"];
 const GIT_ALLOW_RULES = ["Bash(git status)", "Bash(git diff *)", "Bash(git log *)"];
 
 export const sha256 = (text) => `sha256:${crypto.createHash("sha256").update(text).digest("hex")}`;
@@ -134,7 +136,7 @@ export function resolveAnswers(kit, answers) {
   const errors = [];
   const input = answers ?? {};
   for (const k of Object.keys(input)) {
-    if (!["modules", "values", "flags", "date"].includes(k)) errors.push(`answers: unknown key "${k}"`);
+    if (!["modules", "values", "flags", "date", "add"].includes(k)) errors.push(`answers: unknown key "${k}"`);
   }
 
   // Modules: known, core included, requires and when satisfied. Order follows the registry.
@@ -152,6 +154,19 @@ export function resolveAnswers(kit, answers) {
     }
   }
   const modules = selectedModules(kit, ids);
+
+  // Add mode: modules joining an existing install. They must be selected, and not core.
+  let add = null;
+  if (input.add !== undefined) {
+    if (!Array.isArray(input.add) || input.add.length === 0) errors.push("answers.add must be a non-empty array of module ids");
+    else {
+      add = [...input.add];
+      for (const id of add) {
+        if (!ids.includes(id)) errors.push(`added module "${id}" must also be in answers.modules`);
+        if (id === "core") errors.push('"core" is part of every install; it can\'t be added');
+      }
+    }
+  }
 
   // Flags: every vocabulary flag, false unless answered; derived flags are computed below.
   const flags = Object.fromEntries(Object.keys(vocabulary.flags).map((f) => [f, false]));
@@ -206,7 +221,9 @@ export function resolveAnswers(kit, answers) {
     const err = valueError(vocabulary.tokens[name], vocabulary, v);
     if (err) errors.push(`${name}: ${err}`);
   }
-  return { modules: modules.map((m) => m.id), values, flags, errors };
+  const out = { modules: modules.map((m) => m.id), values, flags, errors };
+  if (add) out.add = add;
+  return out;
 }
 
 /**
@@ -310,53 +327,191 @@ const readIfExists = (p) => (fs.existsSync(p) ? fs.readFileSync(p, "utf8") : nul
  * The settings fragments merge into .claude/settings.json (create, unchanged or update).
  */
 export function planInstall(kit, resolved, repoRoot) {
+  if (resolved.add) return planAdd(kit, resolved, repoRoot);
   const { files, settings } = renderAll(kit, resolved);
-  const planned = files.map((f) => {
-    if (f.omitted) return { ...f, action: "omit" };
-    const current = readIfExists(resolveTarget(repoRoot, f.target));
-    let action = "create";
-    if (current === f.content) action = "unchanged";
-    else if (current !== null) action = f.onExisting === "skip" ? "skip" : f.onExisting;
-    return { ...f, action, sha256: sha256(f.content) };
-  });
-
-  let settingsPlan = null;
-  if (settings.length) {
-    const abs = resolveTarget(repoRoot, SETTINGS_TARGET);
-    const raw = readIfExists(abs);
-    let existing = {};
-    if (raw !== null) {
-      try {
-        existing = JSON.parse(raw);
-      } catch (e) {
-        throw new Error(`${SETTINGS_TARGET} is not valid JSON (${e.message}); fix it before installing`);
-      }
-      if (!isObject(existing)) throw new Error(`${SETTINGS_TARGET} must hold a JSON object`);
-    }
-    let merged = existing;
-    const conflicts = [];
-    for (const s of settings) {
-      const r = mergeSettings(merged, s.fragment);
-      merged = r.merged;
-      conflicts.push(...r.conflicts);
-    }
-    const content = `${JSON.stringify(merged, null, 2)}\n`;
-    const same = raw !== null && JSON.stringify(JSON.parse(raw)) === JSON.stringify(merged);
-    settingsPlan = {
-      target: SETTINGS_TARGET,
-      fragments: settings.map((s) => s.template),
-      action: raw === null ? "create" : same ? "unchanged" : "update",
-      conflicts,
-      riskyExistingAllow: riskyAllowRules(kit, existing),
-      content,
-    };
-  }
-
-  const postInstall = selectedModules(kit, resolved.modules).flatMap((m) =>
-    m.postInstall.map((command) => ({ module: m.id, command })),
-  );
-  return { modules: resolved.modules, files: planned, settings: settingsPlan, postInstall };
+  const planned = files.map((f) => (f.omitted ? { ...f, action: "omit" } : fileAction(f, repoRoot)));
+  return {
+    modules: resolved.modules,
+    files: planned,
+    settings: planSettings(kit, settings, repoRoot),
+    postInstall: postInstallFor(kit, resolved.modules),
+  };
 }
+
+/** A rendered file's install action against what the repo holds now (see planInstall). */
+function fileAction(f, repoRoot) {
+  const current = readIfExists(resolveTarget(repoRoot, f.target));
+  let action = "create";
+  if (current === f.content) action = "unchanged";
+  else if (current !== null) action = f.onExisting === "skip" ? "skip" : f.onExisting;
+  return { ...f, action, sha256: sha256(f.content) };
+}
+
+const postInstallFor = (kit, ids) =>
+  selectedModules(kit, ids).flatMap((m) => m.postInstall.map((command) => ({ module: m.id, command })));
+
+/** How the settings fragments merge into .claude/settings.json, or null with no fragments. */
+function planSettings(kit, settings, repoRoot) {
+  if (!settings.length) return null;
+  const abs = resolveTarget(repoRoot, SETTINGS_TARGET);
+  const raw = readIfExists(abs);
+  let existing = {};
+  if (raw !== null) {
+    try {
+      existing = JSON.parse(raw);
+    } catch (e) {
+      throw new Error(`${SETTINGS_TARGET} is not valid JSON (${e.message}); fix it before installing`);
+    }
+    if (!isObject(existing)) throw new Error(`${SETTINGS_TARGET} must hold a JSON object`);
+  }
+  let merged = existing;
+  const conflicts = [];
+  for (const s of settings) {
+    const r = mergeSettings(merged, s.fragment);
+    merged = r.merged;
+    conflicts.push(...r.conflicts);
+  }
+  const content = `${JSON.stringify(merged, null, 2)}\n`;
+  const same = raw !== null && JSON.stringify(JSON.parse(raw)) === JSON.stringify(merged);
+  return {
+    target: SETTINGS_TARGET,
+    fragments: settings.map((s) => s.template),
+    action: raw === null ? "create" : same ? "unchanged" : "update",
+    conflicts,
+    riskyExistingAllow: riskyAllowRules(kit, existing),
+    content,
+  };
+}
+
+/** The repo's install record, or null when the kit was never installed there. */
+export function readManifest(repoRoot) {
+  const raw = readIfExists(resolveTarget(repoRoot, MANIFEST_TARGET));
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`${MANIFEST_TARGET} is not valid JSON (${e.message})`);
+  }
+}
+
+/**
+ * Answers that reproduce an existing install: its modules, values and flags without the
+ * derived ones, and its install date. The starting point for an add-mode answers file.
+ */
+export function answersFromManifest(manifest) {
+  const values = Object.fromEntries(Object.entries(manifest.values ?? {}).filter(([k]) => !DERIVED_TOKENS.includes(k)));
+  const flags = Object.fromEntries(
+    Object.entries(manifest.flags ?? {}).filter(([k]) => !k.startsWith("module.") && !DERIVED_FLAGS.includes(k)),
+  );
+  return { modules: [...(manifest.modules ?? [])], date: manifest.installedAt, flags, values };
+}
+
+/**
+ * Add mode: modules joining an existing install (answers.add). The answers are the install's
+ * own (see answersFromManifest) plus the new modules and any values or flags the owner
+ * confirmed. Only the added modules' files are installed, with the usual actions. Files of
+ * installed modules are compared between a render of the install's recorded answers and a
+ * render of the new ones, both with this kit:
+ *   create, merge, ...  a file that applies only now (its when flag turned true): as usual
+ *   delta               an installed file whose render changes (a module or flag it
+ *                       mentions, or a derived value such as CMD_HOOK_TESTS): the plan
+ *                       carries a line diff the installer applies by hand, because the
+ *                       installed file was adapted and is never re-rendered
+ *   retired             a file that no longer applies: reported, never deleted
+ * Files whose render doesn't change are left out. Settings merge only the added fragments.
+ */
+export function planAdd(kit, resolved, repoRoot) {
+  const manifest = readManifest(repoRoot);
+  if (!manifest) throw new Error(`add mode needs an existing install, and ${MANIFEST_TARGET} is missing`);
+  const installed = manifest.modules ?? [];
+  const already = resolved.add.filter((id) => installed.includes(id));
+  if (already.length) throw new Error(`already installed: ${already.join(", ")}`);
+  const expected = [...installed, ...resolved.add].sort();
+  if (JSON.stringify([...resolved.modules].sort()) !== JSON.stringify(expected)) {
+    throw new Error(`answers.modules must be the installed modules (${installed.join(", ")}) plus the added ones`);
+  }
+  const before = resolveAnswers(kit, answersFromManifest(manifest));
+  if (before.errors.length) {
+    throw new Error(`the install's recorded answers don't fit this kit:\n${before.errors.map((e) => `  ${e}`).join("\n")}`);
+  }
+  // The dates stay the install's, so a file that prints {{DATE}} doesn't show up as a delta.
+  const comparable = { ...resolved, values: { ...resolved.values, DATE: before.values.DATE, DATE_YM: before.values.DATE_YM } };
+  const after = renderAll(kit, resolved);
+  const afterOld = new Map(renderAll(kit, comparable).files.map((f) => [f.template, f]));
+  const prev = new Map(renderAll(kit, before).files.map((f) => [f.template, f]));
+
+  const files = [];
+  for (const f of after.files) {
+    if (resolved.add.includes(f.module)) {
+      files.push(f.omitted ? { ...f, action: "omit" } : fileAction(f, repoRoot));
+      continue;
+    }
+    const was = prev.get(f.template);
+    const now = afterOld.get(f.template);
+    if (now.omitted && was.omitted) continue;
+    if (!now.omitted && was.omitted) files.push(fileAction(f, repoRoot));
+    else if (now.omitted) files.push({ ...f, action: "retired" });
+    else if (now.content !== was.content) {
+      const exists = fs.existsSync(resolveTarget(repoRoot, f.target));
+      const { content: _c, ...rest } = now;
+      files.push({ ...rest, action: exists ? "delta" : "missing", diff: lineDiff(was.content, now.content) });
+    }
+  }
+  const added = after.settings.filter((s) => resolved.add.includes(s.module));
+  return {
+    mode: "add",
+    modules: resolved.modules,
+    add: resolved.add,
+    installedKitVersion: manifest.kit?.version ?? null,
+    files,
+    settings: planSettings(kit, added, repoRoot),
+    postInstall: postInstallFor(kit, resolved.add),
+  };
+}
+
+/**
+ * A unified-style line diff (no file headers), with `context` lines around each change.
+ * Small files only: it is a plain LCS table.
+ */
+export function lineDiff(a, b, context = 2) {
+  const x = a.split("\n");
+  const y = b.split("\n");
+  const lcs = Array.from({ length: x.length + 1 }, () => new Array(y.length + 1).fill(0));
+  for (let i = x.length - 1; i >= 0; i--) {
+    for (let j = y.length - 1; j >= 0; j--) {
+      lcs[i][j] = x[i] === y[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const ops = [];
+  let i = 0;
+  let j = 0;
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) ops.push({ t: " ", s: x[i++], at: j++ });
+    else if (j < y.length && (i >= x.length || lcs[i][j + 1] > lcs[i + 1][j])) ops.push({ t: "+", s: y[j], at: j++ });
+    else ops.push({ t: "-", s: x[i++], at: j });
+  }
+  const keep = new Set();
+  ops.forEach((o, k) => {
+    if (o.t === " ") return;
+    for (let n = Math.max(0, k - context); n <= Math.min(ops.length - 1, k + context); n++) keep.add(n);
+  });
+  const out = [];
+  let last = -2;
+  ops.forEach((o, k) => {
+    if (!keep.has(k)) return;
+    if (k !== last + 1) out.push(`@@ near line ${o.at + 1} @@`);
+    out.push(`${o.t}${o.s}`);
+    last = k;
+  });
+  return out.join("\n");
+}
+
+/** The lines a diff adds, ignoring blank ones: what an applied delta must leave in the file. */
+export const addedLines = (diff) =>
+  diff
+    .split("\n")
+    .filter((l) => l.startsWith("+") && l.slice(1).trim())
+    .map((l) => l.slice(1));
 
 /** Write a plan into repoRoot. Returns the repo-relative paths written. */
 export function applyPlan(plan, repoRoot) {
@@ -381,6 +536,7 @@ export function applyPlan(plan, repoRoot) {
 /** The plan without file contents, for printing. */
 export function summarize(plan, resolved) {
   return {
+    ...(plan.mode ? { mode: plan.mode, add: plan.add, installedKitVersion: plan.installedKitVersion } : {}),
     modules: plan.modules,
     values: resolved.values,
     flags: resolved.flags,
@@ -422,9 +578,11 @@ export function main(argv, { kit = loadKit(), out = process.stdout } = {}) {
   } else if (command === "show") {
     if (!opts.target) throw new Error("--target <path> is required");
     const hit =
-      opts.target === SETTINGS_TARGET ? plan.settings : plan.files.find((f) => f.target === opts.target && !f.omitted);
+      opts.target === SETTINGS_TARGET
+        ? plan.settings
+        : plan.files.find((f) => f.target === opts.target && (f.content !== undefined || f.diff !== undefined));
     if (!hit) throw new Error(`no rendered file targets ${opts.target}`);
-    out.write(hit.content);
+    out.write(hit.content ?? `${hit.diff}\n`);
   } else if (command === "apply") {
     const written = applyPlan(plan, repo);
     out.write(`${JSON.stringify({ ...summarize(plan, resolved), written }, null, 2)}\n`);

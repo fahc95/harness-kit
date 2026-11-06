@@ -84,3 +84,23 @@ Append-only ADR log for decisions about the kit itself. Decisions about the harn
 **Consequences**:
 - Easier: target repos can install Claude Code, Antigravity, or both around one `.agents/` core; every playbook is a first-class skill and slash command in both providers.
 - Harder: `template-lint.test.mjs` runs both `.claude/hooks/guards.test.mjs` and `.agents/hooks/agy-guard.test.mjs` and checks that both keep the vocabulary's production command list in sync.
+
+---
+
+## ADR-005: Adding Modules to an Existing Install
+**Date**: 2026-11-06
+**Status**: Proposed
+
+**Context**: `harness-init` stopped on any repo with `.agents/harness.json`, so a project installed with an older kit (NoLine, on 0.3.0) couldn't take a new module. A full re-install would re-render files the project already adapted. Installed files also mention modules and flags in `kit:if` blocks (for example `AGENTS.md` and `module.pm`), so adding a module changes files the add doesn't own.
+
+**Decision**:
+1. Add mode is an answers file with `add: [module ids]`, built from the install's recorded answers (`manifest.mjs answers`) plus the new modules and any values or flags the owner confirms. `answers.modules` must equal the installed modules plus the added ones.
+2. The renderer installs the added modules' files with the usual actions, and installed modules' files that apply only now. Every installed file is compared between a render of the recorded answers and a render of the new ones, both with the current kit and the install's dates. A file whose render changes is a `delta`: the plan carries a line diff that the installer applies by hand with the owner. An adapted file is never re-rendered. A file that no longer applies is reported as `retired`, never deleted.
+3. `manifest.mjs check` waits until every added line of each delta is in its file (a heuristic, not a merge check), alongside the usual adapt markers, `.kit-new` files and missing targets.
+4. `manifest.mjs write` updates the record instead of replacing it: installed files keep their `rendered` hash; a file that took a delta gets a new `installed` hash, so a later sync treats the delta as a project change and keeps it; new entries carry `kitVersion` when the kit is newer than the install; values keep the install's derived ones and gain the new answers; flags are the new ones; `history` lists the install and each add.
+
+**Alternatives considered**: re-rendering the whole install (loses adaptations or floods the owner with `.kit-new` files); forbidding new modules from appearing in other modules' files (keeps add simple but bans the `AGENTS.md` mentions every module has today); writing deltas as `.kit-new` files (the owner would merge a full kit file to get a two-line change).
+
+**Consequences**:
+- Easier: a project takes a new module in one PR, with every change to an existing file shown as a small diff.
+- Harder: a delta computed with a newer kit isolates only the add's own changes; upgrading the rest of the install to the newer kit is still a separate, unbuilt flow. The applied-delta check only looks for added lines.
