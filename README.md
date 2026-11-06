@@ -86,6 +86,8 @@ Templates never sit in the plugin's top-level `agents/`, `hooks/`, `rules/` or `
 | 4 | Tests on throwaway repos and a brownfield fixture |
 | 5 | First real install on a brownfield project (the v1 finish line) |
 
+Ideas that aren't planned yet, such as the verification modules and an adversarial PR reviewer, are in [docs/intentions.md](docs/intentions.md).
+
 The full plan lives in the reference implementation's `docs/plans/2026-10-harness-kit.md`, in a private repo.
 
 ## Requirements
