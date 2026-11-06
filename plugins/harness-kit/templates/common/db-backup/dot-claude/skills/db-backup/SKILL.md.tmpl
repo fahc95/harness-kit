@@ -1,0 +1,14 @@
+---
+name: db-backup
+description: Back up the production database (pg_dump -Fc via Docker) to a folder outside the repo, verify it and keep the newest few. "/db-backup check" runs a self-test that never contacts production. Restore steps in references/restore.md.
+disable-model-invocation: true
+argument-hint: "[check]"
+allowed-tools:
+  - Bash(node .agents/skills/db-backup/scripts/db-backup.mjs --check)
+---
+
+Read `.agents/skills/db-backup/SKILL.md` and follow it exactly. It is the source of truth for this skill; if this file disagrees with it, the `.agents/` file wins. Never read any `.env` file or the backup env file.
+
+Argument from {{OWNER}} (empty for the real backup, "check" for the self-test):
+
+$ARGUMENTS

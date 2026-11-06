@@ -1,0 +1,35 @@
+# Restoring a db-backup dump
+
+Dumps are PostgreSQL custom-format archives (`-Fc`). `pg_restore` detects the format by itself. Use a client and server of the major in the file name (`-pg<major>.<minor>`) or newer. A dump holds real users' data: keep restores local and delete them when done.
+
+## Default: a new, empty local database
+
+Never restore over the dev database. Start a throwaway server of the dump's major:
+
+    MAJOR=16
+    DUMP=$HOME/Backups/{{BACKUP_NAME}}/db/{{BACKUP_NAME}}-prod-<timestamp>-pg16.4.dump   # or ${{BACKUP_DIR_ENV}}
+    docker run -d --name {{BACKUP_NAME}}-restore -e POSTGRES_PASSWORD=restore -p 127.0.0.1:5434:5432 -v "$DUMP:/backup.dump:ro" "postgres:${MAJOR}-alpine"
+    docker exec {{BACKUP_NAME}}-restore pg_isready -h 127.0.0.1 -U postgres     # repeat until "accepting connections"
+    docker exec {{BACKUP_NAME}}-restore createdb -U postgres -T template0 restored
+    docker exec {{BACKUP_NAME}}-restore pg_restore -U postgres -d restored --no-owner --no-acl --exit-on-error /backup.dump
+    docker rm -f -v {{BACKUP_NAME}}-restore                                     # when done
+
+- `template0` gives a truly empty database.
+- `--no-owner --no-acl` skip ownership and grants, so no production roles need to exist.
+- The dump is mounted as a file, not piped through stdin: `pg_dump` wrote it to a pipe, so the archive has no data offsets, and `pg_restore` can seek in it only when it reads a file. Selective (`-L`) and parallel (`-j`) restores need that.
+- Selective restore: `docker exec {{BACKUP_NAME}}-restore pg_restore --list /backup.dump > list.txt`, delete lines, copy it in with `docker cp`, then add `-L /list.txt`.
+
+## Roles (faithful copies only)
+
+A faithful copy on another host needs the roles to exist first. Dump them from the source with `pg_dumpall --globals-only`. Its output holds password hashes, so treat it like a secret. The skill doesn't automate it, and the provider may not allow it.
+
+## Production restore: manual, {{OWNER}} only
+
+Only for rolling back a **destructive** migration that reached `main`. Additive: don't restore; redeploy the previous version and keep the schema. Never from an agent session. Rehearse on a local copy before the first real use.
+
+1. Pick the backup taken right before the merge. Anything written since then is lost: export what must be kept first.
+2. Take a fresh backup now, so the restore itself can be undone.
+3. Stop the app, so nothing writes during the restore and a restart can't re-apply the migration. Check {{DB_PROVIDER}}'s docs for the current way to stop a service.
+4. From your own terminal, restore with a `postgres:<major>-alpine` container that mounts the dump read-only and runs `pg_restore --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error /backup.dump`. Connect with a password prompt or a pgpass/service file; never put the URL or password on the command line or in shell history.
+5. Revert the destructive PR on `main`, then redeploy the previous version.
+<!-- kit:adapt: Write step 6, how to verify the restored production: the health path, a row count on a core table, and one real user flow, using this project's names. -->

@@ -1,0 +1,256 @@
+// Shared engine for the smoke-local and e2e-verify skills. Each skill keeps its own copy of
+// this file, and the kit keeps the two identical. The project-specific parts live in each
+// skill's JSON config, written at install time; this file knows no project.
+// Fake credentials only: nothing here reads a .env file or a real secret.
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+
+/** One command line with no shell metacharacters, the same rule as the kit's command type. */
+export const COMMAND_RE = /^[A-Za-z0-9_@./:=+-]+( [A-Za-z0-9_@./:=+-]+)*$/;
+export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+export const IMAGE_RE = /^[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9._-]+)?$/;
+export const HEALTH_RE = /^\/[A-Za-z0-9_./-]*$/;
+export const EXTRA_ENV_RE = /^[A-Z_][A-Z0-9_]*=[^\s:@]*$/;
+export const DB_ENGINES = ["none", "postgres"];
+
+// The throwaway database: fake credentials, data in tmpfs, never the dev database.
+export const DB = { user: "app", password: "app", name: "app" };
+
+export const isPort = (v) => /^[1-9][0-9]{3,4}$/.test(String(v)) && Number(v) >= 1024 && Number(v) <= 65535;
+export const splitCommand = (cmd) => cmd.split(" ");
+
+/** The repo root of the current checkout. */
+export function repoRoot() {
+  const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  if (r.status !== 0) throw new UsageError("not inside a git checkout");
+  return r.stdout.trim();
+}
+
+/** A bad argument or config: exit 2, like a failed preflight. */
+export class UsageError extends Error {}
+
+const need = (errors, ok, msg) => {
+  if (!ok) errors.push(msg);
+};
+const stringList = (v, re) => Array.isArray(v) && v.every((x) => typeof x === "string" && re.test(x));
+
+/**
+ * Check the fields smoke-local and e2e-verify share. Returns a list of problems, each
+ * naming the key, so a broken config fails before anything starts.
+ */
+export function sharedConfigErrors(c) {
+  const errors = [];
+  need(errors, typeof c.dockerfile === "string" && /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/.test(c.dockerfile) && !c.dockerfile.includes(".."), "dockerfile: a repo-relative path");
+  need(errors, isPort(c.appPort), "appPort: the port the app listens on inside the container (1024-65535)");
+  need(errors, typeof c.healthPath === "string" && HEALTH_RE.test(c.healthPath), "healthPath: a path starting with /");
+  const db = c.database ?? {};
+  need(errors, DB_ENGINES.includes(db.engine), `database.engine: one of ${DB_ENGINES.join(", ")}`);
+  need(errors, typeof db.image === "string" && IMAGE_RE.test(db.image), "database.image: an image reference such as name:tag");
+  need(errors, typeof db.urlEnv === "string" && ENV_NAME_RE.test(db.urlEnv), "database.urlEnv: the env var that holds the database URL");
+  need(errors, stringList(c.secretEnv, ENV_NAME_RE), "secretEnv: env var names that get a fake secret");
+  need(errors, stringList(c.localUrlEnv, ENV_NAME_RE), "localUrlEnv: env var names that get the local app URL");
+  need(errors, stringList(c.buildArgUrl, ENV_NAME_RE), "buildArgUrl: docker build args that get the local app URL");
+  need(errors, stringList(c.extraEnv, EXTRA_ENV_RE), "extraEnv: NAME=value pairs with no spaces, colons or @ (never a secret or a URL)");
+  need(errors, stringList(c.containerMigrate, COMMAND_RE), "containerMigrate: commands run in a one-off container before boot");
+  return errors;
+}
+
+/** Read and check a skill config; throws UsageError listing every problem. */
+export function loadConfig(file, extraErrors = () => []) {
+  let c;
+  try {
+    c = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new UsageError(`can't read ${file}: ${e.message}`);
+  }
+  const errors = [...sharedConfigErrors(c), ...extraErrors(c)];
+  if (errors.length) throw new UsageError(`${file} is not valid:\n${errors.map((e) => `  ${e}`).join("\n")}`);
+  return c;
+}
+
+/** A fake secret for a variable: long enough for libraries that check length, obviously fake. */
+export const fakeSecret = (name) => `local-only-not-a-secret-${name.toLowerCase().replace(/_/g, "-")}-0123456789abcdef`;
+
+/**
+ * The app's environment: fake secrets, the local URL, the extra pairs and the database URL.
+ * `omit` leaves variables out (the negative boot); `production` sets NODE_ENV.
+ */
+export function appEnv(c, { url, dbUrl, port, omit = [], production = true }) {
+  const env = {};
+  if (production) env.NODE_ENV = "production";
+  if (port !== undefined) env.PORT = String(port);
+  for (const pair of c.extraEnv) {
+    const i = pair.indexOf("=");
+    env[pair.slice(0, i)] = pair.slice(i + 1);
+  }
+  for (const n of c.localUrlEnv) env[n] = url;
+  for (const n of c.secretEnv) env[n] = fakeSecret(n);
+  if (dbUrl) env[c.database.urlEnv] = dbUrl;
+  for (const n of omit) delete env[n];
+  return env;
+}
+
+/** docker run -e flags for an env object. */
+export const envFlags = (env) => Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+
+export const docker = (args, opts = {}) => spawnSync("docker", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...opts });
+export const dockerRunning = () => docker(["info"]).status === 0;
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** True when something accepts connections on 127.0.0.1:port. */
+export function portBusy(port) {
+  return new Promise((resolve) => {
+    const s = net.connect({ host: "127.0.0.1", port: Number(port) });
+    s.once("connect", () => {
+      s.destroy();
+      resolve(true);
+    });
+    s.once("error", () => resolve(false));
+  });
+}
+
+/** The HTTP status of a GET, or 0 when nothing answers. */
+export async function httpStatus(url, timeoutMs = 3000) {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
+    await r.body?.cancel();
+    return r.status;
+  } catch {
+    return 0;
+  }
+}
+
+/** Run a command line from the config, without a shell, logging to a file. Returns the status. */
+export function runLogged(cmd, { cwd, env, log }) {
+  const [bin, ...args] = splitCommand(cmd);
+  const r = spawnSync(bin, args, { cwd, env: { ...process.env, ...env }, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  fs.appendFileSync(log, `$ ${cmd}\n${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `${r.error.message}\n` : ""}`);
+  return r.status ?? 1;
+}
+
+/** Start a long-running command in the background, logging to a file. */
+export function startLogged(cmd, extraArgs, { cwd, env, log }) {
+  const [bin, ...args] = splitCommand(cmd);
+  const out = fs.openSync(log, "a");
+  return spawn(bin, [...args, ...extraArgs], { cwd, env: { ...process.env, ...env }, stdio: ["ignore", out, out], detached: true });
+}
+
+/** Stop a background process and its children. */
+export function stopProcess(child) {
+  if (!child || child.exitCode !== null) return;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    try {
+      child.kill("SIGTERM");
+    } catch {}
+  }
+}
+
+/** Start a throwaway Postgres with its data in tmpfs and wait until it accepts TCP connections. */
+export async function startPostgres({ name, image, network, hostPort, tries = 30 }) {
+  const args = ["run", "-d", "--name", name, "--tmpfs", "/var/lib/postgresql/data"];
+  if (network) args.push("--network", network, "--network-alias", "db");
+  if (hostPort) args.push("-p", `127.0.0.1:${hostPort}:5432`);
+  args.push("-e", `POSTGRES_USER=${DB.user}`, "-e", `POSTGRES_PASSWORD=${DB.password}`, "-e", `POSTGRES_DB=${DB.name}`, image);
+  const r = docker(args);
+  if (r.status !== 0) return { ok: false, seconds: 0, error: r.stderr.trim() };
+  const start = Date.now();
+  for (let i = 0; i < tries; i++) {
+    // Over TCP, so the image's init-phase server (socket only) doesn't count as ready.
+    if (docker(["exec", name, "pg_isready", "-h", "127.0.0.1", "-U", DB.user, "-d", DB.name]).status === 0) {
+      return { ok: true, seconds: Math.round((Date.now() - start) / 1000) };
+    }
+    await sleep(1000);
+  }
+  return { ok: false, seconds: Math.round((Date.now() - start) / 1000), error: `not ready after ${tries}s` };
+}
+
+export const postgresUrl = (host, port) => `postgresql://${DB.user}:${DB.password}@${host}:${port}/${DB.name}`;
+
+/** A docker logs dump into a file. */
+export const saveLogs = (container, log) => {
+  const r = docker(["logs", container]);
+  fs.writeFileSync(log, `${r.stdout ?? ""}${r.stderr ?? ""}`);
+};
+
+/** A folder for logs, kept on failure and removed on success. */
+export const workDir = (skill) => fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `${skill}-`));
+
+/** True when p is inside the checkout (or the main checkout of a worktree). */
+export function insideRepo(p, root) {
+  const common = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: root, encoding: "utf8" });
+  const roots = [root];
+  if (common.status === 0) roots.push(path.dirname(common.stdout.trim()));
+  const abs = path.resolve(p);
+  return roots.some((r) => abs === r || abs.startsWith(`${r}${path.sep}`));
+}
+
+/** PASS / FAIL / SKIP bookkeeping and the summary every run prints. */
+export class Checks {
+  constructor(names) {
+    this.names = names;
+    this.rows = new Map(names.map((n) => [n, { status: "SKIP", detail: "", log: "" }]));
+    this.firstFail = null;
+  }
+  record(name, ok, detail, log = "") {
+    this.rows.set(name, { status: ok ? "PASS" : "FAIL", detail, log });
+    if (!ok && !this.firstFail) this.firstFail = name;
+  }
+  passed(name) {
+    return this.rows.get(name).status === "PASS";
+  }
+  get allPassed() {
+    return this.names.every((n) => this.passed(n));
+  }
+  /** The summary lines, and the tail of the first failing check's log. */
+  summary(skill, tail = 50) {
+    const lines = [`${skill}: ${this.allPassed ? "PASS" : "FAIL"}`];
+    for (const n of this.names) {
+      const r = this.rows.get(n);
+      lines.push(`  ${n.padEnd(10)} ${r.status.padEnd(5)} ${r.detail}`.trimEnd());
+    }
+    const f = this.firstFail && this.rows.get(this.firstFail);
+    if (f?.log && fs.existsSync(f.log)) {
+      lines.push(`--- last ${tail} lines: ${this.firstFail} ---`);
+      lines.push(...fs.readFileSync(f.log, "utf8").trimEnd().split("\n").slice(-tail));
+    }
+    return lines.join("\n");
+  }
+}
+
+/**
+ * Run fn(state) with cleanup on success, failure and Ctrl-C. state.cleanups gets functions
+ * that remove containers, networks and processes; the log folder is kept only on failure.
+ */
+export async function withCleanup(skill, fn) {
+  const state = { cleanups: [], work: null, ok: false };
+  const cleanup = () => {
+    for (const c of state.cleanups.reverse()) {
+      try {
+        c();
+      } catch {}
+    }
+    state.cleanups = [];
+    if (state.work) {
+      if (state.ok) fs.rmSync(state.work, { recursive: true, force: true });
+      else process.stderr.write(`logs: ${state.work}\n`);
+    }
+  };
+  const onSignal = () => {
+    cleanup();
+    process.exit(130);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  try {
+    return await fn(state);
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    cleanup();
+  }
+}

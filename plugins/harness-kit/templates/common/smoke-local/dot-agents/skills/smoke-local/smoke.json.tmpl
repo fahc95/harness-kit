@@ -1,0 +1,17 @@
+{
+  "dockerfile": {{VERIFY_DOCKERFILE_JSON}},
+  "appPort": {{VERIFY_APP_PORT_JSON}},
+  "healthPath": {{VERIFY_HEALTH_PATH_JSON}},
+  "database": {
+    "engine": {{VERIFY_DB_ENGINE_JSON}},
+    "image": {{VERIFY_DB_IMAGE_JSON}},
+    "urlEnv": {{VERIFY_DB_URL_ENV_JSON}}
+  },
+  "secretEnv": {{VERIFY_SECRET_ENV_JSON}},
+  "localUrlEnv": {{VERIFY_LOCAL_URL_ENV_JSON}},
+  "buildArgUrl": {{VERIFY_BUILD_ARG_URL_JSON}},
+  "extraEnv": {{VERIFY_EXTRA_ENV_JSON}},
+  "containerMigrate": {{VERIFY_CONTAINER_MIGRATE_JSON}},
+  "secondBoot": {{SMOKE_SECOND_BOOT_JSON}},
+  "mustFailWithout": {{SMOKE_MUST_FAIL_WITHOUT_JSON}}
+}

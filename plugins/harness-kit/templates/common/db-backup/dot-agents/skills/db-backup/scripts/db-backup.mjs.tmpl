@@ -1,0 +1,346 @@
+#!/usr/bin/env node
+// db-backup: an off-platform pg_dump of the PRODUCTION database (.agents/skills/db-backup/SKILL.md).
+// The production URL is read from a git-ignored env file by pg-creds.mjs, in this process
+// only. It reaches the client containers as a mode-600 pgpass and service file in a private
+// temp folder mounted read-only, never through a shell, argv, a log or an agent's context.
+//
+//   node .agents/skills/db-backup/scripts/db-backup.mjs            the real backup (owner only)
+//   node .agents/skills/db-backup/scripts/db-backup.mjs --check    a self-test that never contacts production
+//
+// Exit codes: 0 done, 1 failed, 2 bad argument, config or destination.
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadCreds, redact, SERVICE, writeCredFiles } from "./pg-creds.mjs";
+
+export const CONFIG = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "backup.json");
+const PROBE_IMAGE = "postgres:16-alpine";
+const MIN_MAJOR = 10;
+const ERR_TAIL = 20;
+const FAKE_URL = "postgresql://u:p@example.invalid:5432/db";
+const USAGE = "usage: node .agents/skills/db-backup/scripts/db-backup.mjs [--check]";
+
+export class UsageError extends Error {}
+
+const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+
+/** Problems with backup.json, each naming its key. */
+export function configErrors(c) {
+  const errors = [];
+  if (c.engine !== "postgres") errors.push('engine: "postgres" (the only engine this script dumps)');
+  if (typeof c.name !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(c.name)) errors.push("name: a lowercase slug for the dump names and default folder");
+  if (typeof c.envFile !== "string" || !/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/.test(c.envFile) || c.envFile.split("/").includes("..")) {
+    errors.push("envFile: the repo-relative, git-ignored env file that holds the production URL");
+  }
+  if (!Array.isArray(c.urlEnv) || !c.urlEnv.length || !c.urlEnv.every((n) => typeof n === "string" && ENV_NAME_RE.test(n))) {
+    errors.push("urlEnv: the variable names to read the URL from, in order");
+  }
+  if (typeof c.dirEnv !== "string" || !ENV_NAME_RE.test(c.dirEnv)) errors.push("dirEnv: the variable that overrides the backup folder");
+  if (typeof c.keep !== "string" || !/^[1-9][0-9]?$/.test(c.keep)) errors.push('keep: how many dumps to keep, "1" to "99"');
+  return errors;
+}
+
+export function loadConfig(file = CONFIG) {
+  let c;
+  try {
+    c = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new UsageError(`can't read ${file}: ${e.message}`);
+  }
+  const errors = configErrors(c);
+  if (errors.length) throw new UsageError(`${file} is not valid:\n${errors.map((e) => `  ${e}`).join("\n")}`);
+  return c;
+}
+
+/**
+ * The backup folder: $<dirEnv>, else ~/Backups/<name>/db. It is a privacy control (dumps hold
+ * real users' data), so anything ambiguous is refused before any path logic runs.
+ */
+export function destination(c, env = process.env, home = os.homedir()) {
+  let d = env[c.dirEnv] || path.join(home, "Backups", c.name, "db");
+  while (d.length > 1 && d.endsWith("/")) d = d.slice(0, -1);
+  if (!d || d === "/") throw new UsageError(`${c.dirEnv} cannot be / or empty`);
+  if (!path.isAbsolute(d)) throw new UsageError(`${c.dirEnv} must be an absolute path`);
+  if (d.split("/").some((s) => s === "." || s === "..")) throw new UsageError(`${c.dirEnv} must not contain . or .. components`);
+  return d;
+}
+
+export const dumpPattern = (name) => new RegExp(`^${name}-prod-[0-9]{8}T[0-9]{6}Z-pg[0-9]+\\.[0-9]+\\.dump$`);
+export const dumpName = (name, ts, major, minor) => `${name}-prod-${ts}-pg${major}.${minor}.dump`;
+
+/** Delete dumps beyond the newest `keep`, touching only names this script writes. */
+export function prune(dir, name, keep) {
+  const re = dumpPattern(name);
+  // The UTC timestamp in the name sorts lexicographically.
+  const dumps = fs
+    .readdirSync(dir)
+    .filter((f) => re.test(f) && fs.statSync(path.join(dir, f)).isFile())
+    .sort()
+    .reverse();
+  const old = dumps.slice(Number(keep));
+  for (const f of old) fs.rmSync(path.join(dir, f));
+  return old.length;
+}
+
+export function humanSize(bytes) {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let b = bytes;
+  let i = 0;
+  while (b >= 1024 && i < units.length - 1) {
+    b /= 1024;
+    i++;
+  }
+  return i === 0 ? `${b}B` : `${b.toFixed(1)}${units[i]}`;
+}
+
+const git = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
+
+/** This checkout and, in a worktree, the main checkout. */
+export function checkouts(root) {
+  const common = git(root, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  const main = common.status === 0 ? fs.realpathSync(path.dirname(common.stdout.trim())) : root;
+  return { root: fs.realpathSync(root), main };
+}
+
+const nearestExisting = (p) => {
+  let d = p;
+  while (!fs.existsSync(d)) d = path.dirname(d);
+  return d;
+};
+
+/** The physical absolute path of a path that may not exist yet. */
+const physical = (p) => {
+  const base = nearestExisting(p);
+  return path.join(fs.realpathSync(base), path.relative(base, p));
+};
+
+export function insideRepo(p, { root, main }) {
+  const d = physical(p);
+  return [root, main].some((r) => d === r || d.startsWith(`${r}/`));
+}
+
+/** Why the destination can't be used, or null. */
+export function destProblem(dir, repos) {
+  if (insideRepo(dir, repos)) {
+    return "the destination is inside the repo checkout; dumps hold real user data and must never be committed (point the folder variable outside the repo)";
+  }
+  let p = dir;
+  while (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) {
+    if (fs.existsSync(p)) return `a component of ${dir} exists and is not a directory`;
+    p = path.dirname(p);
+  }
+  try {
+    fs.accessSync(p, fs.constants.W_OK);
+  } catch {
+    return p === dir ? "the destination is not writable" : `cannot create ${dir}: ${p} is not writable`;
+  }
+  return null;
+}
+
+export const sameDisk = (dir, root) => fs.statSync(nearestExisting(dir)).dev === fs.statSync(root).dev;
+
+/** The env file in this checkout, else in the main checkout of a worktree, or null. */
+export function findEnvFile(c, { root, main }) {
+  for (const r of [root, main]) {
+    const f = path.join(r, c.envFile);
+    if (fs.existsSync(f)) return { file: f, checkout: r };
+  }
+  return null;
+}
+
+/** True when git ignores the env file and doesn't track it, so the URL can't be committed. */
+export function envFileIgnored(c, checkout) {
+  if (git(checkout, "ls-files", "--error-unmatch", "--", c.envFile).status === 0) return false;
+  return git(checkout, "check-ignore", "-q", "--", c.envFile).status === 0;
+}
+
+const docker = (args, opts = {}) => spawnSync("docker", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...opts });
+
+function selfTest(c, repos, work) {
+  let ok = true;
+  const lines = ["db-backup --check (never contacts production)"];
+  const line = (name, status, msg) => {
+    lines.push(`  ${name.padEnd(12)} ${status.padEnd(4)} ${msg}`);
+    if (status === "FAIL") ok = false;
+  };
+  const dockerUp = docker(["info"]).status === 0;
+  line("docker", dockerUp ? "PASS" : "FAIL", dockerUp ? "running" : "Docker is not running (start Docker Desktop or OrbStack)");
+  let dest = null;
+  try {
+    dest = destination(c);
+    const problem = destProblem(dest, repos);
+    line("destination", problem ? "FAIL" : "PASS", problem ?? `${dest} (${fs.existsSync(dest) ? "writable" : "will be created"})`);
+    if (sameDisk(dest, repos.root)) line("disk", "WARN", `same disk as the repo: a disk failure would lose both (set ${c.dirEnv} to another disk if you can)`);
+    else line("disk", "PASS", "separate disk");
+  } catch (e) {
+    line("destination", "FAIL", e.message);
+  }
+  const guard = insideRepo(path.join(repos.root, "backups"), repos) && insideRepo(path.join(repos.main, "backups"), repos) && !insideRepo(path.join(work, "x"), repos);
+  line("repo-guard", guard ? "PASS" : "FAIL", guard ? "refuses destinations inside the repo checkouts" : "the inside-the-repo check is not working");
+  const found = findEnvFile(c, repos);
+  if (!found) line("env", "FAIL", `${c.envFile} not found in this checkout or the main one`);
+  else if (!envFileIgnored(c, found.checkout)) line("env", "FAIL", `${c.envFile} is tracked or not git-ignored; ignore it before putting a URL in it`);
+  else {
+    try {
+      line("env", "PASS", `${c.envFile}: ${loadCreds(found.file, c.urlEnv).name} is set and well-formed`);
+    } catch (e) {
+      line("env", "FAIL", `${c.envFile}: ${e.message}`);
+    }
+  }
+  if (dockerUp) {
+    const creds = path.join(work, "fake-creds");
+    writeCredFiles(creds, { host: "example.invalid", port: 5432, dbname: "db", user: "u", password: "p", sslmode: "require" });
+    const r = docker(["run", "--rm", "-v", `${creds}:/run/pgcreds:ro`, PROBE_IMAGE, "stat", "-c", "%a", "/run/pgcreds/pgpass"]);
+    const perm = r.stdout.trim();
+    line("mount", perm === "600" ? "PASS" : "FAIL", perm === "600" ? "pgpass keeps mode 600 inside the container" : `pgpass mode inside the container is '${perm || "unknown"}', expected 600`);
+  }
+  if (dest && fs.existsSync(dest)) {
+    const stale = fs.readdirSync(dest).filter((f) => f.startsWith(`.${c.name}-prod-`) && f.endsWith(".partial"));
+    line("partials", stale.length ? "FAIL" : "PASS", stale.length ? `${stale.length} leftover .partial file(s) in ${dest} from an interrupted run; delete them` : "no leftover .partial files");
+  }
+  const ret = path.join(work, "ret");
+  fs.mkdirSync(ret);
+  for (let d = 1; d <= 12; d++) fs.writeFileSync(path.join(ret, dumpName(c.name, `202601${String(d).padStart(2, "0")}T000000Z`, 16, 4)), "");
+  fs.writeFileSync(path.join(ret, "notes.txt"), "");
+  fs.writeFileSync(path.join(ret, `${c.name}-prod-x.dump`), "");
+  const keep = Number(c.keep);
+  const deleted = prune(ret, c.name, keep);
+  const remaining = fs.readdirSync(ret).filter((f) => dumpPattern(c.name).test(f)).length;
+  const expectDeleted = Math.max(0, 12 - keep);
+  const retOk = deleted === expectDeleted && remaining === Math.min(12, keep) && fs.existsSync(path.join(ret, "notes.txt")) && fs.existsSync(path.join(ret, `${c.name}-prod-x.dump`));
+  line("retention", retOk ? "PASS" : "FAIL", retOk ? `keeps the newest ${keep}, ignores other files` : `deleted ${deleted}, kept ${remaining}`);
+  lines.push(`db-backup --check: ${ok ? "PASS" : "FAIL"}`);
+  process.stdout.write(`${lines.join("\n")}\n`);
+  return ok ? 0 : 1;
+}
+
+class Failure extends Error {}
+
+function backup(c, repos, work, state) {
+  if (docker(["info"]).status !== 0) throw new Failure("Docker is not running (start Docker Desktop or OrbStack)");
+  const dest = destination(c);
+  const problem = destProblem(dest, repos);
+  if (problem) throw new Failure(problem);
+  fs.mkdirSync(dest, { recursive: true, mode: 0o700 });
+  if (sameDisk(dest, repos.root)) process.stderr.write(`db-backup: warning: ${dest} is on the same disk as the repo; a disk failure would lose both\n`);
+  const found = findEnvFile(c, repos);
+  if (!found) throw new Failure(`${c.envFile} not found in this checkout or the main one`);
+  if (!envFileIgnored(c, found.checkout)) throw new Failure(`${c.envFile} is tracked or not git-ignored; refusing to read a URL that could be committed`);
+  let loaded;
+  try {
+    loaded = loadCreds(found.file, c.urlEnv);
+  } catch (e) {
+    throw new Failure(e.message);
+  }
+  const creds = path.join(work, "creds");
+  writeCredFiles(creds, loaded.creds);
+  const fail = (msg, stderr) => new Failure(`${msg}${stderr ? `\n${redact(stderr, loaded.creds, loaded.url).trimEnd().split("\n").slice(-ERR_TAIL).join("\n")}` : ""}`);
+  const pg = (image, args, opts = {}) =>
+    docker(
+      [
+        "run",
+        "--rm",
+        "-v",
+        `${creds}:/run/pgcreds:ro`,
+        "-e",
+        "PGSERVICEFILE=/run/pgcreds/pg_service.conf",
+        "-e",
+        "PGPASSFILE=/run/pgcreds/pgpass",
+        "-e",
+        `PGSERVICE=${SERVICE}`,
+        "-e",
+        "PGCONNECT_TIMEOUT=15",
+        image,
+        ...args,
+      ],
+      opts,
+    );
+
+  // Probe: server version and whether this connection uses SSL.
+  const sql = "SELECT current_setting('server_version_num'), coalesce((SELECT ssl::text FROM pg_stat_ssl WHERE pid = pg_backend_pid()), 'unknown')";
+  const probe = pg(PROBE_IMAGE, ["psql", "-X", "-A", "-t", "-w", "-F", " ", "-c", sql], { stdio: ["ignore", "pipe", "pipe"] });
+  if (probe.status !== 0) throw fail("could not connect to production", probe.stderr);
+  const [num, ssl] = probe.stdout.trim().split(" ");
+  // Validated before use: the major becomes a Docker image tag.
+  if (!/^[0-9]{5,6}$/.test(num ?? "")) throw new Failure("unexpected server version");
+  const major = Math.floor(Number(num) / 10000);
+  const minor = Number(num) % 100;
+  if (major < MIN_MAJOR) throw new Failure(`server major ${major} is older than ${MIN_MAJOR}`);
+  const client = `postgres:${major}-alpine`;
+  const pull = docker(["pull", "-q", client]);
+  if (pull.status !== 0) throw fail(`could not pull ${client}`, pull.stderr);
+
+  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+  const file = path.join(dest, dumpName(c.name, ts, major, minor));
+  state.partial = path.join(dest, `.${c.name}-prod-${ts}.partial`);
+  const out = fs.openSync(state.partial, "wx", 0o600);
+  const dump = pg(client, ["pg_dump", "-Fc", "-w"], { stdio: ["ignore", out, "pipe"] });
+  fs.closeSync(out);
+  if (dump.status !== 0) throw fail("pg_dump failed", dump.stderr);
+
+  // Verify: the archive must parse and list entries, including table data. The TOC holds
+  // owner names, so it is counted, never printed.
+  if (fs.statSync(state.partial).size === 0) throw new Failure("the dump is empty");
+  const input = fs.openSync(state.partial, "r");
+  const list = docker(["run", "--rm", "-i", client, "pg_restore", "--list"], { stdio: [input, "pipe", "pipe"] });
+  fs.closeSync(input);
+  if (list.status !== 0) throw fail("pg_restore --list could not read the dump", list.stderr);
+  const toc = list.stdout.split("\n");
+  const objects = toc.filter((l) => /^[0-9]+;/.test(l)).length;
+  const data = toc.filter((l) => /^[0-9]+; [0-9]+ [0-9]+ TABLE DATA /.test(l)).length;
+  if (!objects || !data) throw new Failure("the dump lists no objects or no table data");
+
+  fs.renameSync(state.partial, file);
+  state.partial = null;
+  const deleted = prune(dest, c.name, c.keep);
+  process.stdout.write(
+    [
+      "db-backup: OK",
+      `  file:    ${file}`,
+      `  size:    ${humanSize(fs.statSync(file).size)}`,
+      `  server:  PostgreSQL ${major}.${minor} (ssl: ${ssl ?? "unknown"})`,
+      `  objects: ${objects} TOC entries (${data} with table data)`,
+      `  kept:    newest ${c.keep} (${deleted} older deleted)`,
+      "",
+    ].join("\n"),
+  );
+  return 0;
+}
+
+function main(argv) {
+  if (argv.length > 1 || (argv.length === 1 && argv[0] !== "--check")) throw new UsageError(USAGE);
+  const c = loadConfig();
+  const top = git(process.cwd(), "rev-parse", "--show-toplevel");
+  if (top.status !== 0) throw new UsageError("not inside a git checkout");
+  const repos = checkouts(top.stdout.trim());
+  const work = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "db-backup-"));
+  fs.chmodSync(work, 0o700);
+  const state = { partial: null };
+  const cleanup = () => {
+    fs.rmSync(work, { recursive: true, force: true });
+    if (state.partial) fs.rmSync(state.partial, { force: true });
+  };
+  const onSignal = () => {
+    cleanup();
+    process.exit(130);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  try {
+    return argv[0] === "--check" ? selfTest(c, repos, work) : backup(c, repos, work, state);
+  } finally {
+    cleanup();
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    process.exitCode = main(process.argv.slice(2));
+  } catch (e) {
+    // Our own messages never contain secrets; fs errors carry only the paths we passed in.
+    process.stderr.write(`db-backup: FAIL: ${e.message}\n`);
+    process.exitCode = e instanceof UsageError ? 2 : 1;
+  }
+}

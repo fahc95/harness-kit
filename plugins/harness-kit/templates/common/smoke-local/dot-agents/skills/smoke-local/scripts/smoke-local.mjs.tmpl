@@ -1,0 +1,211 @@
+#!/usr/bin/env node
+// smoke-local: the container smoke test on this machine (.agents/skills/smoke-local/SKILL.md).
+// Builds the production image, boots it against a throwaway database the way production
+// does, optionally boots it a second time on the same database, and checks that a container
+// missing a required secret never becomes healthy. Fake credentials only.
+//
+//   node .agents/skills/smoke-local/scripts/smoke-local.mjs [--port <1024-65535>]
+//
+// Exit codes: 0 all checks passed, 1 a check failed, 2 preflight or bad arguments.
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  appEnv,
+  Checks,
+  COMMAND_RE,
+  docker,
+  dockerRunning,
+  ENV_NAME_RE,
+  envFlags,
+  httpStatus,
+  isPort,
+  loadConfig,
+  portBusy,
+  postgresUrl,
+  repoRoot,
+  saveLogs,
+  sleep,
+  splitCommand,
+  startPostgres,
+  UsageError,
+  withCleanup,
+  workDir,
+} from "./verify-lib.mjs";
+
+export const CONFIG = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "smoke.json");
+export const DEFAULT_PORT = 3100;
+const HEALTH_TRIES = 60;
+const HEALTH_SLEEP_MS = 2000;
+const NEG_TRIES = 30;
+const USAGE = "usage: node .agents/skills/smoke-local/scripts/smoke-local.mjs [--port <1024-65535>]";
+// A docker inspect Go template, spelled without a literal double brace (the kit reserves it for tokens).
+const stateField = (field) => `${"{".repeat(2)}.State.${field}${"}".repeat(2)}`;
+
+/** smoke.json's own keys, on top of the shared ones. */
+export const smokeConfigErrors = (c) => {
+  const errors = [];
+  if (!["true", "false"].includes(c.secondBoot)) errors.push('secondBoot: "true" or "false"');
+  if (!Array.isArray(c.mustFailWithout) || !c.mustFailWithout.every((n) => typeof n === "string" && ENV_NAME_RE.test(n))) {
+    errors.push("mustFailWithout: env var names a boot without which must fail");
+  }
+  if (Array.isArray(c.containerMigrate) && !c.containerMigrate.every((x) => COMMAND_RE.test(x))) errors.push("containerMigrate: commands");
+  return errors;
+};
+
+export function parseArgs(argv) {
+  const opts = { port: DEFAULT_PORT };
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--port" && isPort(argv[i + 1])) opts.port = Number(argv[++i]);
+    else throw new UsageError(USAGE);
+  }
+  return opts;
+}
+
+/** The checks this config runs, in order. */
+export const checkNames = (c) => [
+  "build",
+  ...(c.database.engine === "none" ? [] : ["db"]),
+  ...(c.containerMigrate.length ? ["migrate"] : []),
+  "boot 1",
+  ...(c.secondBoot === "true" ? ["boot 2"] : []),
+  ...c.mustFailWithout.map((n) => `no ${n}`),
+];
+
+async function main(argv) {
+  const opts = parseArgs(argv);
+  const root = repoRoot();
+  const c = loadConfig(CONFIG, smokeConfigErrors);
+  if (!dockerRunning()) throw new UsageError("preflight failed: Docker is not running (start Docker Desktop or OrbStack)");
+  if (await portBusy(opts.port)) throw new UsageError(`preflight failed: port ${opts.port} is busy (use --port <n>)`);
+
+  const url = `http://localhost:${opts.port}`;
+  const image = `harness-smoke-${path.basename(root).toLowerCase().replace(/[^a-z0-9_.-]/g, "-")}:latest`;
+  const id = `smoke-${process.pid}`;
+  const net = `${id}-net`;
+  const checks = new Checks(checkNames(c));
+
+  return withCleanup("smoke-local", async (state) => {
+    state.work = workDir("smoke-local");
+    const log = (name) => path.join(state.work, `${name.replace(/ /g, "-")}.log`);
+    state.cleanups.push(() => docker(["network", "rm", net]));
+
+    // build
+    let t = Date.now();
+    const buildArgs = c.buildArgUrl.flatMap((n) => ["--build-arg", `${n}=${url}`]);
+    const b = docker(["build", "--progress=plain", "-f", c.dockerfile, ...buildArgs, "-t", image, "."], { cwd: root });
+    fs.writeFileSync(log("build"), `${b.stdout}${b.stderr}`);
+    const secs = () => Math.round((Date.now() - t) / 1000);
+    checks.record("build", b.status === 0, b.status === 0 ? `${secs()}s` : `docker build failed after ${secs()}s`, log("build"));
+
+    let dbUrl;
+    let ready = checks.passed("build");
+    if (ready) docker(["network", "create", net]);
+    if (ready && c.database.engine !== "none") {
+      const name = `${id}-db`;
+      state.cleanups.push(() => docker(["rm", "-f", "-v", name]));
+      const r = await startPostgres({ name, image: c.database.image, network: net });
+      saveLogs(name, log("db"));
+      checks.record("db", r.ok, r.ok ? `ready after ${r.seconds}s` : r.error, log("db"));
+      dbUrl = postgresUrl("db", 5432);
+      ready = r.ok;
+    }
+
+    const env = (omit = []) => appEnv(c, { url, dbUrl, port: c.appPort, omit });
+    if (ready && c.containerMigrate.length) {
+      t = Date.now();
+      let ok = true;
+      for (const cmd of c.containerMigrate) {
+        const r = docker(["run", "--rm", "--network", net, ...envFlags(env()), image, ...splitCommand(cmd)]);
+        fs.appendFileSync(log("migrate"), `$ ${cmd}\n${r.stdout}${r.stderr}`);
+        if (r.status !== 0) {
+          ok = false;
+          break;
+        }
+      }
+      checks.record("migrate", ok, ok ? `${secs()}s` : `a migrate command failed after ${secs()}s`, log("migrate"));
+      ready = ok;
+    }
+
+    const boot = (name, omit) => {
+      state.cleanups.push(() => docker(["rm", "-f", "-v", name]));
+      return docker(["run", "-d", "--name", name, "--network", net, "-p", `127.0.0.1:${opts.port}:${c.appPort}`, ...envFlags(env(omit)), image]);
+    };
+    const running = (name) => docker(["inspect", "-f", stateField("Running"), name]).stdout.trim() === "true";
+
+    const waitHealthy = async (check, name) => {
+      t = Date.now();
+      let result = null;
+      for (let i = 0; i < HEALTH_TRIES && !result; i++) {
+        if (!running(name)) {
+          const code = docker(["inspect", "-f", stateField("ExitCode"), name]).stdout.trim();
+          result = [false, `container exited (code ${code})`];
+        } else if ((await httpStatus(`http://127.0.0.1:${opts.port}${c.healthPath}`)) === 200) {
+          result = [true, `healthy after ${secs()}s`];
+        } else await sleep(HEALTH_SLEEP_MS);
+      }
+      result ??= [false, `timed out after ${secs()}s waiting for ${c.healthPath}`];
+      saveLogs(name, log(check));
+      checks.record(check, result[0], result[1], log(check));
+      docker(["rm", "-f", "-v", name]);
+    };
+
+    if (ready) {
+      boot(`${id}-app1`, []);
+      await waitHealthy("boot 1", `${id}-app1`);
+      // Same database: migrations must be a no-op and any seed must re-run cleanly.
+      if (checks.passed("boot 1") && c.secondBoot === "true") {
+        boot(`${id}-app2`, []);
+        await waitHealthy("boot 2", `${id}-app2`);
+      }
+    }
+
+    // A container without a required secret must never become healthy.
+    for (const secret of c.mustFailWithout) {
+      if (!ready) break;
+      const check = `no ${secret}`;
+      const name = `${id}-no-${secret.toLowerCase()}`;
+      boot(name, [secret]);
+      let verdict = null;
+      let lastCode = 0;
+      for (let i = 0; i < NEG_TRIES && !verdict; i++) {
+        if (!running(name)) {
+          saveLogs(name, log(check));
+          const logged = fs.readFileSync(log(check), "utf8").includes(secret);
+          verdict = logged ? [true, `exited and logged ${secret}`] : [false, `exited but its logs don't mention ${secret}`];
+          break;
+        }
+        const code = await httpStatus(`http://127.0.0.1:${opts.port}${c.healthPath}`);
+        if (code === 200) verdict = [false, `${c.healthPath} returned 200 without ${secret}`];
+        else if (code) lastCode = code;
+        if (!verdict) await sleep(HEALTH_SLEEP_MS);
+      }
+      if (!verdict) {
+        saveLogs(name, log(check));
+        const logged = fs.readFileSync(log(check), "utf8").includes(secret);
+        if (!lastCode) verdict = [false, "the server never answered (only connection failures)"];
+        else if (logged) verdict = [true, `${c.healthPath} failed with HTTP ${lastCode} and logged ${secret}`];
+        else if (lastCode === 500) verdict = [true, `${c.healthPath} returned HTTP 500 (variable name not logged)`];
+        else verdict = [false, `${c.healthPath} returned HTTP ${lastCode}, expected 500`];
+      }
+      checks.record(check, verdict[0], verdict[1], log(check));
+      docker(["rm", "-f", "-v", name]);
+    }
+
+    state.ok = checks.allPassed;
+    process.stdout.write(`${checks.summary("smoke-local")}\n`);
+    return state.ok ? 0 : 1;
+  });
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (e) => {
+      process.stderr.write(`smoke-local: ${e.message}\n`);
+      process.exitCode = e instanceof UsageError ? 2 : 1;
+    },
+  );
+}

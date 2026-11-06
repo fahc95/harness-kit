@@ -22,7 +22,7 @@ import {
   riskyAllowRules,
   SETTINGS_TARGET,
 } from "./render.mjs";
-import { exampleAnswers, kit, markdownBacklogAnswers, put, withTempRepo } from "./test-support.mjs";
+import { exampleAnswers, kit, markdownBacklogAnswers, put, verifyModuleValues, withTempRepo } from "./test-support.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./render.mjs", import.meta.url));
 
@@ -218,6 +218,7 @@ describe("renderAll", () => {
     test(`renders every file of every module with no token left and the registry's targets (has.pmTool ${pmTool})`, () => {
       const a = pmTool ? exampleAnswers() : markdownBacklogAnswers();
       a.modules = kit.registry.modules.map((m) => m.id);
+      Object.assign(a.values, verifyModuleValues());
       Object.assign(a.flags, { "has.db": true, "has.github": true, "flow.gitFlow": true, "has.container": true });
       const r = resolve(a);
       const { files, settings } = renderAll(kit, r);

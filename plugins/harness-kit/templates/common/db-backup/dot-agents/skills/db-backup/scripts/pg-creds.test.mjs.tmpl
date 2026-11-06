@@ -1,0 +1,113 @@
+// Tests for the db-backup credential helpers. Every fixture is fake. The key property: no
+// output or error ever carries a credential.
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, test } from "node:test";
+import { loadCreds, parseDbUrl, pgpassLine, pickUrl, redact, SERVICE, serviceFile, writeCredFiles } from "./pg-creds.mjs";
+
+const PASSWORD = "p@ss:w0rd";
+const HOST = "db-7.example-cloud.net";
+const USER = "backup_user";
+const DB = "appdb";
+const URL = `postgresql://${USER}:p%40ss%3Aw0rd@${HOST}:41234/${DB}`;
+const SECRETS = [PASSWORD, "p%40ss%3Aw0rd", HOST, URL];
+
+const assertNoSecret = (text, label) => {
+  for (const s of SECRETS) assert.ok(!text.includes(s), `${label} leaks a credential`);
+};
+
+const throwsWithoutSecret = (fn) => {
+  try {
+    fn();
+  } catch (error) {
+    assertNoSecret(error.message, "error message");
+    return;
+  }
+  assert.fail("expected an error");
+};
+
+describe("pickUrl", () => {
+  test("takes the first variable that is set", () => {
+    assert.equal(pickUrl({ A_URL: "a", B_URL: "b" }, ["A_URL", "B_URL"]).url, "a");
+    assert.deepEqual(pickUrl({ A_URL: " ", B_URL: "b" }, ["A_URL", "B_URL"]), { name: "B_URL", url: "b" });
+  });
+  test("names every variable when none is set", () => assert.throws(() => pickUrl({}, ["A_URL", "B_URL"]), /A_URL, B_URL/));
+});
+
+describe("parseDbUrl", () => {
+  test("decodes the password, reads the port and requires TLS by default", () => {
+    const c = parseDbUrl(URL);
+    assert.equal(c.password, PASSWORD);
+    assert.equal(c.port, 41234);
+    assert.equal(c.host, HOST);
+    assert.equal(c.sslmode, "require");
+  });
+  test("defaults the port to 5432", () => assert.equal(parseDbUrl(`postgres://u:p@${HOST}/db`).port, 5432));
+  test("honors sslmode", () => assert.equal(parseDbUrl(`${URL}?sslmode=verify-full`).sslmode, "verify-full"));
+  for (const [name, url] of [
+    ["an invalid sslmode", `${URL}?sslmode=bogus`],
+    ["localhost", `postgresql://u:${PASSWORD}@localhost:5432/db`],
+    ["127.0.0.1", "postgresql://u:secretpw@127.0.0.1:5432/db"],
+    ["host.docker.internal", "postgresql://u:secretpw@host.docker.internal:5432/db"],
+    ["a missing password", `postgresql://u@${HOST}:5432/db`],
+    ["a missing user", `postgresql://:pw@${HOST}:5432/db`],
+    ["a missing database", `postgresql://u:pw@${HOST}:5432/`],
+    ["a non-postgres protocol", `mysql://u:pw@${HOST}:5432/db`],
+    ["CR/LF in the password", `postgresql://u:a%0Ab@${HOST}:5432/db`],
+    ["garbage", "not a url p@ss:w0rd"],
+  ]) {
+    test(`rejects ${name} without leaking it`, () => throwsWithoutSecret(() => parseDbUrl(url)));
+  }
+});
+
+describe("credential files", () => {
+  const c = parseDbUrl(URL);
+  test("pgpassLine escapes : and \\", () =>
+    assert.equal(pgpassLine({ ...c, password: "a:b\\c" }), `${HOST}:41234:${DB}:${USER}:a\\:b\\\\c\n`));
+  test("serviceFile never holds the password", () => {
+    const text = serviceFile(c);
+    assert.ok(text.startsWith(`[${SERVICE}]\nhost=`));
+    assert.ok(!text.includes(PASSWORD));
+  });
+  test("redact removes every credential and IP addresses", () => {
+    const text = `connect ${URL} as ${USER} to ${DB} at ${HOST} (10.1.2.3) pw=${PASSWORD} enc=p%40ss%3Aw0rd`;
+    const out = redact(text, c, URL);
+    assertNoSecret(out, "redact output");
+    assert.ok(!out.includes("10.1.2.3"));
+    assert.equal(redact("at 2600:1f18:abcd::12 port", c, URL), "at <ip> port");
+    assertNoSecret(redact(`postgres://${USER}:other@${HOST}:5432/x`, c, URL), "url variant");
+    assert.ok(!out.includes(`as ${USER} `));
+  });
+  test("writeCredFiles makes 0600 files in a new 0700 folder and refuses an existing one", () => {
+    const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pg-creds-"));
+    try {
+      const out = path.join(dir, "creds");
+      writeCredFiles(out, c);
+      assert.equal(fs.statSync(out).mode & 0o777, 0o700);
+      for (const f of ["pgpass", "pg_service.conf"]) assert.equal(fs.statSync(path.join(out, f)).mode & 0o777, 0o600);
+      assert.throws(() => writeCredFiles(out, c));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("loadCreds", () => {
+  test("reads the env file, names the variable, and fails without leaking", () => {
+    const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pg-creds-"));
+    try {
+      const good = path.join(dir, "good.env");
+      fs.writeFileSync(good, `# fake\nBACKUP_URL="${URL}"\n`);
+      const r = loadCreds(good, ["OTHER_URL", "BACKUP_URL"]);
+      assert.equal(r.name, "BACKUP_URL");
+      assert.equal(r.creds.host, HOST);
+      const bad = path.join(dir, "bad.env");
+      fs.writeFileSync(bad, `BACKUP_URL=postgresql://${USER}:${encodeURIComponent(PASSWORD)}@localhost/${DB}\n`);
+      throwsWithoutSecret(() => loadCreds(bad, ["BACKUP_URL"]));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -9,8 +9,11 @@ import {
   classifyCommand,
   detect,
   detectCommands,
+  detectDbEngine,
   detectPackageManager,
+  findHealthRoute,
   githubRepoFrom,
+  parseEnvExample,
   scriptCommand,
 } from "./detect.mjs";
 import { kit, put, withTempRepo } from "./test-support.mjs";
@@ -217,5 +220,56 @@ describe("detect", () => {
       const r = spawnSync(process.execPath, [SCRIPT, "--repo", root], { encoding: "utf8" });
       assert.equal(r.status, 0, r.stderr);
       assert.equal(JSON.parse(r.stdout).git.isRepo, false);
+    }));
+});
+
+describe("verification discovery", () => {
+  test("env examples, health routes and database engines", () =>
+    withTempRepo((root) => {
+      assert.deepEqual(parseEnvExample('# c\nexport A_URL="http://localhost:3000"\nB=1\nlower=x\n'), [
+        { name: "A_URL", value: "http://localhost:3000" },
+        { name: "B", value: "1" },
+      ]);
+      assert.equal(findHealthRoute(root), null);
+      put(root, "src/routes/api/healthz.ts", "export const x = 1;\n");
+      assert.deepEqual(findHealthRoute(root), { path: "/api/healthz", file: "src/routes/api/healthz.ts" });
+      assert.deepEqual(detectDbEngine(root, {}).engine, null);
+      put(root, "prisma/schema.prisma", 'datasource db {\n  provider = "postgresql"\n}\n');
+      assert.equal(detectDbEngine(root, {}).engine, "postgres");
+      put(root, "compose.yml", "services:\n  db:\n    image: postgres:17-alpine\n");
+      assert.deepEqual(detectDbEngine(root, {}).image, "postgres:17-alpine");
+    }));
+
+  test("a container app with a database, secrets and a test runner", () =>
+    withTempRepo((root) => {
+      const repo = gitRepo(root);
+      put(repo, "package.json", JSON.stringify({ name: "demo", scripts: { build: "vite build", start: "vite preview --port 3000", "db:migrate": "node migrate.js" }, dependencies: { pg: "1", react: "1" }, devDependencies: { "@playwright/test": "1" } }));
+      put(repo, "package-lock.json", "{}");
+      put(repo, "Dockerfile", "FROM node:22\nEXPOSE 8080\nCMD [\"npm\", \"start\"]\n");
+      put(repo, ".env.example", "DATABASE_URL=postgresql://localhost/demo\nAPP_SECRET=x\nAPP_URL=http://localhost:3000\nVITE_PUBLIC_URL=http://localhost:3000\n");
+      put(repo, "src/server.ts", 'app.get("/healthz", ok);\n');
+      put(repo, "e2e/home.spec.ts", "\n");
+      const v = detect(repo, kit).verification;
+      assert.equal(v.dockerfile, "Dockerfile");
+      assert.equal(v.appPort, "8080");
+      assert.match(v.entrypoint, /^CMD/);
+      assert.deepEqual(v.healthRoute, { path: "/healthz", file: "src/server.ts" });
+      assert.equal(v.database.engine, "postgres");
+      assert.equal(v.database.urlEnv, "DATABASE_URL");
+      assert.deepEqual(v.secretCandidates, ["APP_SECRET"]);
+      assert.deepEqual(v.localUrlCandidates, ["APP_URL", "VITE_PUBLIC_URL"]);
+      assert.deepEqual(v.buildArgCandidates, ["VITE_PUBLIC_URL"]);
+      assert.equal(v.scripts.build.command, "npm run build");
+      assert.equal(v.scripts.start.hardcodedPort, "3000");
+      assert.equal(v.scripts.migrate.command, "npm run db:migrate");
+      assert.deepEqual([v.e2eRunner.name, v.e2eRunner.dep], ["playwright", true]);
+      assert.deepEqual(v.e2eDirs, ["e2e"]);
+      assert.equal(typeof v.localEnv.docker, "boolean");
+    }));
+
+  test("a repo with no package.json and no Dockerfile has no verification section", () =>
+    withTempRepo((root) => {
+      const repo = gitRepo(root);
+      assert.equal(detect(repo, kit).verification, null);
     }));
 });

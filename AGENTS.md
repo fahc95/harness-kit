@@ -12,7 +12,7 @@ A Claude Code plugin, distributed through the marketplace in this same repo, tha
 - **Templates are inert.** They live under `plugins/harness-kit/templates/`. Dot folders are spelled `dot-agents/`, `dot-claude/` and so on, and every template file has a `.tmpl` suffix, so a session in this repo never loads a template rule, skill or `CLAUDE.md` as a live one, and `node --test` never runs a template test. The only exceptions are the data files `templates/modules.json` and `templates/vocabulary.json`, which nothing auto-loads. The syntax is in [docs/templates.md](docs/templates.md).
 - **Everything inside the plugin folder.** Installs copy only `plugins/harness-kit/`, so no `../` references and no symlinks out of it.
 - **No project names in templates.** Outside `templates/examples/`, templates carry `{{TOKENS}}`, never a real project's names, URLs or stack.
-- **Production stays out.** No template puts a production-reaching command (ssh to a host, deploys, data-restore or write scripts, MCP servers that reach production) in a guard profile or a tracked `permissions.allow`.
+- **Production stays out.** No template puts a production-reaching command (ssh to a host, deploys, data-restore or write scripts, MCP servers that reach production) in a guard profile or a tracked `permissions.allow`. The one exception is an owner-invoked, read-only skill such as `db-backup` ([docs/decisions.md](docs/decisions.md) ADR-006): it reaches production only when the owner runs it, never from a guard profile, a tracked allow, a schedule or an agent's own initiative, and its credential never enters the agent's context.
 - **No secrets.** This repo is public.
 
 ## Git and PRs

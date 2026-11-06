@@ -377,6 +377,160 @@
       "postInstall": []
     },
     {
+      "id": "smoke-local",
+      "tier": "common",
+      "flag": "module.smokeLocal",
+      "title": "smoke-local skill",
+      "offer": "An owner-run skill that builds the production container image and boots it the way production does against a throwaway database: first boot, an optional second boot on the same database, and a boot without each required secret that must fail. Its settings (Dockerfile, ports, health path, fake env) live in a JSON config filled from what the installer detects.",
+      "default": false,
+      "requires": [
+        "core"
+      ],
+      "when": "has.container",
+      "files": [
+        {
+          "template": "common/smoke-local/dot-agents/skills/smoke-local/SKILL.md.tmpl",
+          "target": ".agents/skills/smoke-local/SKILL.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "common/smoke-local/dot-agents/skills/smoke-local/smoke.json.tmpl",
+          "target": ".agents/skills/smoke-local/smoke.json",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/smoke-local/dot-agents/skills/smoke-local/scripts/smoke-local.mjs.tmpl",
+          "target": ".agents/skills/smoke-local/scripts/smoke-local.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/smoke-local/dot-agents/skills/smoke-local/scripts/smoke-local.test.mjs.tmpl",
+          "target": ".agents/skills/smoke-local/scripts/smoke-local.test.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/smoke-local/dot-agents/skills/smoke-local/scripts/verify-lib.mjs.tmpl",
+          "target": ".agents/skills/smoke-local/scripts/verify-lib.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/smoke-local/dot-claude/skills/smoke-local/SKILL.md.tmpl",
+          "target": ".claude/skills/smoke-local/SKILL.md",
+          "onExisting": "kit-new",
+          "when": "module.claude"
+        }
+      ],
+      "settings": [],
+      "postInstall": []
+    },
+    {
+      "id": "e2e-verify",
+      "tier": "common",
+      "flag": "module.endToEnd",
+      "title": "e2e-verify skill",
+      "offer": "A skill that runs the end-to-end browser suite against a production build and a throwaway database, then reviews the state screenshots for layout and copy problems. Its build, start and test commands live in a JSON config filled from what the installer detects; the installer offers to scaffold a first browser test setup when the repo has none.",
+      "default": false,
+      "requires": [
+        "core"
+      ],
+      "when": "has.ui",
+      "files": [
+        {
+          "template": "common/e2e-verify/dot-agents/skills/e2e-verify/SKILL.md.tmpl",
+          "target": ".agents/skills/e2e-verify/SKILL.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "common/e2e-verify/dot-agents/skills/e2e-verify/e2e.json.tmpl",
+          "target": ".agents/skills/e2e-verify/e2e.json",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/e2e-verify/dot-agents/skills/e2e-verify/scripts/e2e-verify.mjs.tmpl",
+          "target": ".agents/skills/e2e-verify/scripts/e2e-verify.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/e2e-verify/dot-agents/skills/e2e-verify/scripts/e2e-verify.test.mjs.tmpl",
+          "target": ".agents/skills/e2e-verify/scripts/e2e-verify.test.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/e2e-verify/dot-agents/skills/e2e-verify/scripts/verify-lib.mjs.tmpl",
+          "target": ".agents/skills/e2e-verify/scripts/verify-lib.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/e2e-verify/dot-claude/skills/e2e-verify/SKILL.md.tmpl",
+          "target": ".claude/skills/e2e-verify/SKILL.md",
+          "onExisting": "kit-new",
+          "when": "module.claude"
+        }
+      ],
+      "settings": [],
+      "postInstall": []
+    },
+    {
+      "id": "db-backup",
+      "tier": "common",
+      "flag": "module.dbBackup",
+      "title": "db-backup skill",
+      "offer": "An owner-only skill that dumps the production Postgres database with pg_dump to a folder outside the repo, verifies the dump and keeps the newest few. The production URL lives in a git-ignored env file only the script reads, never in the agent's context. With the host provider's MCP server connected, it uses it read-only for checks that expose no credential.",
+      "default": false,
+      "requires": [
+        "core"
+      ],
+      "when": "has.db",
+      "files": [
+        {
+          "template": "common/db-backup/dot-agents/skills/db-backup/SKILL.md.tmpl",
+          "target": ".agents/skills/db-backup/SKILL.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/db-backup/dot-agents/skills/db-backup/backup.json.tmpl",
+          "target": ".agents/skills/db-backup/backup.json",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/db-backup/dot-agents/skills/db-backup/references/restore.md.tmpl",
+          "target": ".agents/skills/db-backup/references/restore.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "common/db-backup/dot-agents/skills/db-backup/scripts/db-backup.mjs.tmpl",
+          "target": ".agents/skills/db-backup/scripts/db-backup.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/db-backup/dot-agents/skills/db-backup/scripts/db-backup.test.mjs.tmpl",
+          "target": ".agents/skills/db-backup/scripts/db-backup.test.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/db-backup/dot-agents/skills/db-backup/scripts/pg-creds.mjs.tmpl",
+          "target": ".agents/skills/db-backup/scripts/pg-creds.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/db-backup/dot-agents/skills/db-backup/scripts/pg-creds.test.mjs.tmpl",
+          "target": ".agents/skills/db-backup/scripts/pg-creds.test.mjs",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/db-backup/dot-claude/skills/db-backup/SKILL.md.tmpl",
+          "target": ".claude/skills/db-backup/SKILL.md",
+          "onExisting": "kit-new",
+          "when": "module.claude"
+        }
+      ],
+      "settings": [],
+      "postInstall": []
+    },
+    {
       "id": "flow-migration",
       "tier": "common",
       "title": "Git Flow to GitHub Flow migration",
