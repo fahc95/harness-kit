@@ -32,3 +32,19 @@ Work the owner wants in the kit that isn't planned yet. Each entry has the idea,
 - **Posting.** Reuse the reference implementation's review poster (a review spec JSON, a dry-run, then one review of `event: COMMENT` with comments anchored to path and line) so every provider's output goes through the same validator.
 - **Cost and noise.** A high-effort run on every push is expensive. Options: run on `ready_for_review` and on demand (a label or a comment command), skip docs-only diffs, and cap the number of findings.
 - **Secrets.** The API key lives only in the repository's secret store, never in a file, and the workflow must not run on PRs from forks with access to it.
+
+## I3. Moving tools between projects, the kit and a personal home (2026-11-06)
+
+**Idea.** Make it routine to move a tool in any direction: from a project up to the kit, from the kit down to a project (new or already installed), and between the kit and a personal, project-independent home that syncs across machines.
+
+**Decided.**
+
+- Two homes, one rule. A tool that needs project facts (commands, database, ports, deploy target) is a kit template: it would need a `{{TOKEN}}` or a `kit:adapt` marker elsewhere. A tool that works unchanged in any repo (teaching, writing and commit rules, general research habits) is personal.
+- The personal home is a private GitHub repo with a live personal plugin and marketplace (skills, agents, commands, hooks) plus a small dotfiles folder for what a plugin can't carry (the global `CLAUDE.md` and `settings.json`), linked into `~/.claude/` by a setup script. Every machine is a clone; none is the hub. It syncs a curated set, never all of `~/.claude/` (transcripts, memory, caches and auth data stay local).
+- The kit ships the flows as skills, so the steps aren't remembered by hand: `harness-upstream` (run in the kit, pointed at a project's skill: copy, strip names and stack into tokens, adapt markers and discovered config, register, test) and an add-modules path in `harness-init` for repos that already have the kit.
+
+**Open.**
+
+- Where Antigravity reads global skills and instructions, for the personal repo's setup script.
+- Whether private-repo marketplaces auto-update without a token on every machine (to verify against the plugin docs).
+- Upgrading an install to a newer kit version (re-render the old version from the manifest's values, three-way merge with the installed file) after add-modules lands.
