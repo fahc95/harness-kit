@@ -116,6 +116,12 @@ Rollback paths:
 <!-- kit:if has.container -->
 - **V2** Production parity is proven only in the container: a container smoke test in CI where one exists, or a local container run {{OWNER}} approves. A host build is not evidence that production works.
 <!-- kit:end -->
+<!-- kit:if module.smokeLocal -->
+- The local container run is the `smoke-local` skill (`.agents/skills/smoke-local/SKILL.md`): propose it with a reason when the image or boot path changes. Only {{OWNER}} runs it.
+<!-- kit:end -->
+<!-- kit:if module.endToEnd -->
+- User-facing flows are verified with the `e2e-verify` skill (`.agents/skills/e2e-verify/SKILL.md`): the E2E suite against a production build and a throwaway database, then a review of every screenshot.
+<!-- kit:end -->
 - **V3** LF line endings everywhere (`.gitattributes`).
 
 <!-- kit:adapt: Add any environment notes as V4 (supported operating systems, where the repo must live, dev containers). Delete this marker if there are none. -->
@@ -195,8 +201,14 @@ For any change to be considered done:
 <!-- kit:if has.ui -->
 - [ ] If user-facing: validated where users see it
 <!-- kit:end -->
+<!-- kit:if module.endToEnd -->
+- [ ] If user-facing and an E2E spec covers it: `e2e-verify` passed and its screenshots were reviewed
+<!-- kit:end -->
 <!-- kit:if has.db -->
 - [ ] If schema change: migration + seed update + rollback note
+<!-- kit:end -->
+<!-- kit:if module.dbBackup -->
+- [ ] If the migration is destructive: {{OWNER}} took a `db-backup` right before merging
 <!-- kit:end -->
 <!-- kit:if has.container -->
 - [ ] If the image or boot path changed (`.agents/rules/production-parity.md`): a container run passed, cited in the PR

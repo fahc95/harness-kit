@@ -1,0 +1,21 @@
+{
+  "mode": {{E2E_MODE_JSON}},
+  "dockerfile": {{VERIFY_DOCKERFILE_JSON}},
+  "appPort": {{VERIFY_APP_PORT_JSON}},
+  "healthPath": {{VERIFY_HEALTH_PATH_JSON}},
+  "database": {
+    "engine": {{VERIFY_DB_ENGINE_JSON}},
+    "image": {{VERIFY_DB_IMAGE_JSON}},
+    "urlEnv": {{VERIFY_DB_URL_ENV_JSON}}
+  },
+  "secretEnv": {{VERIFY_SECRET_ENV_JSON}},
+  "localUrlEnv": {{VERIFY_LOCAL_URL_ENV_JSON}},
+  "buildArgUrl": {{VERIFY_BUILD_ARG_URL_JSON}},
+  "extraEnv": {{VERIFY_EXTRA_ENV_JSON}},
+  "containerMigrate": {{VERIFY_CONTAINER_MIGRATE_JSON}},
+  "setup": {{E2E_SETUP_JSON}},
+  "build": {{E2E_BUILD_JSON}},
+  "start": {{E2E_START_JSON}},
+  "startPortArgs": {{E2E_START_PORT_ARGS_JSON}},
+  "test": {{E2E_TEST_COMMAND_JSON}}
+}

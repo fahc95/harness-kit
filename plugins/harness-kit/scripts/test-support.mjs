@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadKit } from "./render.mjs";
+import { DERIVED_TOKENS, loadKit } from "./render.mjs";
 
 export const kit = loadKit();
 
@@ -46,3 +46,11 @@ export const put = (root, rel, text) => {
   fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
   fs.writeFileSync(path.join(root, rel), text);
 };
+
+/** Example values for the verification modules' tokens (smoke-local, e2e-verify, db-backup). */
+export const verifyModuleValues = () =>
+  Object.fromEntries(
+    Object.entries(kit.vocabulary.tokens)
+      .filter(([name, e]) => /^(VERIFY|SMOKE|E2E|BACKUP)_|^DB_PROVIDER$/.test(name) && !e.when && !DERIVED_TOKENS.includes(name))
+      .map(([name, e]) => [name, e.example]),
+  );

@@ -1,0 +1,87 @@
+---
+name: db-backup
+description: Back up the PRODUCTION database with pg_dump to a folder outside the repo, verify the dump and keep the newest few. The production URL never enters the agent's context. "check" runs a self-test that never contacts production. Only the owner runs the real backup.
+---
+
+# Skill: db-backup, the off-platform backup of production
+
+Only {{OWNER}} invokes this skill. It is read-only against production (a `pg_dump` snapshot that blocks no reader or writer), but it reaches production and copies real users' data, so it is never automatic and never scheduled. It is the off-platform copy: outside the repo, in a portable format, independent of {{DB_PROVIDER}}'s own backups. Take one right before merging a PR with a destructive migration.
+
+## Credentials (non-negotiable)
+
+- The script reads the production URL itself, from `{{BACKUP_ENV_FILE}}` (the first of `{{BACKUP_URL_ENV_JSON}}` that is set). That file is git-ignored; the script refuses it if it is tracked or not ignored. In a worktree it falls back to the main checkout's file.
+- {{OWNER}} puts the URL there by hand, from {{DB_PROVIDER}}'s dashboard or CLI. Never ask for it in chat, and never write it yourself.
+- You, the agent:
+  - never read, `cat`, `grep`, `source` or open the env file or any `.env` file;
+  - never print environment variables;
+  - never pass a URL, host or password as an argument;
+  - never run `psql` or `pg_dump` yourself.
+- How the script keeps it out of sight: the URL stays inside the Node process, which writes a mode-600 `pgpass` and service file into a private temp folder. The client container mounts that folder read-only, the folder is deleted on exit, and connection errors are shown redacted.
+- If anything ever shows something that looks like a credential, stop, tell {{OWNER}} and don't repeat it. {{OWNER}} rotates it.
+
+<!-- kit:if has.dbProviderMcp -->
+## The provider's MCP server
+
+{{DB_PROVIDER}}'s MCP server (`{{DB_PROVIDER_MCP}}`), signed in with {{OWNER}}'s own login, may be used before a backup, read-only, for what doesn't expose a credential:
+
+- confirm which project, service and environment hold the production database;
+- check that external (public) access is on, which the dump needs;
+- read the database version, or the provider's own backup status.
+
+Never call a tool that returns connection strings, environment variables, passwords or tokens: an MCP tool result lands in the conversation. Never use it to change a setting, restart a service or restore anything. If its tools aren't connected, carry on without it.
+
+<!-- kit:end -->
+## Destination
+
+- Default: `~/Backups/{{BACKUP_NAME}}/db`. Override it with `{{BACKUP_DIR_ENV}}`, which must be an absolute path.
+- The folder is created on demand with mode 700.
+- The script refuses a destination inside this checkout or the main one: a dump holds real users' data and must never be committed.
+- A destination on the same disk as the repo only gets a warning. An off-disk or off-machine copy is safer.
+- It needs Node and Docker (Docker Desktop or OrbStack) running.
+
+## Input
+
+- Empty: the real backup.
+- `check`: the self-test. It never connects to production.
+
+## Run
+
+Real backup (always behind a permission prompt: only the self-test may be pre-approved, so touching production takes a second, deliberate yes from {{OWNER}}):
+
+    node .agents/skills/db-backup/scripts/db-backup.mjs
+
+Self-test:
+
+    node .agents/skills/db-backup/scripts/db-backup.mjs --check
+
+The real run:
+
+1. **Preflight:** Docker is running; the destination is outside the repo checkouts and writable (or can be created), with a warning when it shares a disk with the repo; the env file is present, git-ignored, and holds a well-formed URL.
+2. **Version:** asks the server for its version with a `postgres:16-alpine` client.
+3. **Dump:** uses the official `postgres:<server major>-alpine` image, because `pg_dump` can't dump a server newer than itself. Custom format (`-Fc`), written to a temporary `.partial` file.
+4. **Verify:** `pg_restore --list` must parse the file and show entries, including table data.
+5. **Rename:** to `{{BACKUP_NAME}}-prod-<UTC timestamp>-pg<major>.<minor>.dump`.
+6. **Prune:** only then deletes the dumps beyond the newest {{BACKUP_KEEP}}.
+
+## Report
+
+Give {{OWNER}} the script's output as is and nothing more: file path, size, server version (with whether the connection used SSL), object count, and how many old dumps were deleted. The connection requires TLS by default (`sslmode=require`), so ssl is `true` unless the URL opts out with `?sslmode=...`; if it ever shows `false`, tell {{OWNER}} the dump crossed the internet unencrypted.
+
+On failure the script prints a redacted reason. Relay it; don't investigate by reading the env file or connecting yourself. Common causes:
+
+- the destination isn't writable, or sits inside the repo;
+- Docker isn't running;
+- the env file is missing, tracked or not git-ignored;
+- external access to the database is off at {{DB_PROVIDER}};
+- the password was rotated;
+- the server doesn't offer TLS: the default `sslmode=require` refuses to connect without it.
+
+## Restore
+
+See `references/restore.md`. The default is a new, empty local database. Restoring production is a manual, {{OWNER}}-only step.
+
+## Rules
+
+- The real backup runs only when {{OWNER}} invokes this skill. Never schedule it.
+- Never copy a dump into the repo or upload it anywhere.
+- Never edit or delete files in the backup folder by hand; retention is the script's job.

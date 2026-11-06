@@ -1,0 +1,129 @@
+// Tests for db-backup's config, destination rules, retention and env-file guard. None of them
+// needs Docker, and none contacts a database.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import {
+  CONFIG,
+  checkouts,
+  configErrors,
+  destination,
+  destProblem,
+  dumpName,
+  envFileIgnored,
+  findEnvFile,
+  humanSize,
+  insideRepo,
+  loadConfig,
+  prune,
+  UsageError,
+} from "./db-backup.mjs";
+
+const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "db-backup.mjs");
+const config = () => JSON.parse(fs.readFileSync(CONFIG, "utf8"));
+
+const withDir = (fn) => {
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "db-backup-test-"));
+  try {
+    return fn(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+const gitRepo = (dir) => {
+  for (const args of [["init", "-q"], ["config", "user.email", "t@example.invalid"], ["config", "user.name", "t"]]) {
+    spawnSync("git", args, { cwd: dir });
+  }
+};
+
+describe("backup.json", () => {
+  test("the installed config is valid", () => {
+    const c = loadConfig();
+    assert.equal(c.engine, "postgres");
+  });
+
+  test("a broken config is refused with every problem named", () => {
+    const errors = configErrors({ engine: "mysql", name: "Bad Name", envFile: "../.env", urlEnv: [], dirEnv: "lower", keep: "0" }).join("\n");
+    for (const key of ["engine", "name", "envFile", "urlEnv", "dirEnv", "keep"]) assert.match(errors, new RegExp(`${key}:`));
+  });
+});
+
+describe("destination", () => {
+  const c = { ...config(), name: "demo", dirEnv: "DEMO_BACKUP_DIR" };
+  test("defaults to ~/Backups/<name>/db and honors the override", () => {
+    assert.equal(destination(c, {}, "/home/u"), "/home/u/Backups/demo/db");
+    assert.equal(destination(c, { DEMO_BACKUP_DIR: "/mnt/disk/db///" }, "/home/u"), "/mnt/disk/db");
+  });
+  for (const [label, value] of [
+    ["a relative path", "backups"],
+    ["the root", "/"],
+    ["a .. component", "/mnt/../etc"],
+    ["a . component", "/mnt/./db"],
+  ]) {
+    test(`refuses ${label}`, () => assert.throws(() => destination(c, { DEMO_BACKUP_DIR: value }, "/home/u"), UsageError));
+  }
+
+  test("refuses a folder inside the checkout and accepts one outside", () =>
+    withDir((dir) => {
+      const repo = path.join(dir, "repo");
+      fs.mkdirSync(repo);
+      gitRepo(repo);
+      const repos = checkouts(repo);
+      assert.equal(insideRepo(path.join(repo, "backups", "db"), repos), true);
+      assert.match(destProblem(path.join(repo, "backups"), repos), /inside the repo/);
+      assert.equal(destProblem(path.join(dir, "outside", "db"), repos), null);
+      fs.writeFileSync(path.join(dir, "file"), "");
+      assert.match(destProblem(path.join(dir, "file", "db"), repos), /not a directory/);
+    }));
+});
+
+describe("retention", () => {
+  test("keeps the newest dumps and ignores other files", () =>
+    withDir((dir) => {
+      for (let d = 1; d <= 12; d++) fs.writeFileSync(path.join(dir, dumpName("demo", `202601${String(d).padStart(2, "0")}T000000Z`, 16, 4)), "");
+      for (const other of ["notes.txt", "demo-prod-x.dump", "other-prod-20260101T000000Z-pg16.4.dump"]) fs.writeFileSync(path.join(dir, other), "");
+      assert.equal(prune(dir, "demo", "10"), 2);
+      const left = fs.readdirSync(dir);
+      assert.ok(!left.includes(dumpName("demo", "20260101T000000Z", 16, 4)));
+      assert.ok(left.includes(dumpName("demo", "20260112T000000Z", 16, 4)));
+      for (const other of ["notes.txt", "demo-prod-x.dump", "other-prod-20260101T000000Z-pg16.4.dump"]) assert.ok(left.includes(other));
+    }));
+
+  test("humanSize uses IEC units", () => {
+    assert.equal(humanSize(512), "512B");
+    assert.equal(humanSize(1536), "1.5KiB");
+    assert.equal(humanSize(5 * 1024 ** 3), "5.0GiB");
+  });
+});
+
+describe("env file guard", () => {
+  test("the env file must be git-ignored and untracked", () =>
+    withDir((dir) => {
+      gitRepo(dir);
+      const c = { ...config(), envFile: ".env.backup-test" };
+      fs.writeFileSync(path.join(dir, c.envFile), "X=1\n");
+      const repos = checkouts(dir);
+      assert.equal(findEnvFile(c, repos).file, path.join(repos.root, c.envFile));
+      assert.equal(envFileIgnored(c, repos.root), false, "not ignored yet");
+      fs.writeFileSync(path.join(dir, ".gitignore"), `${c.envFile}\n`);
+      assert.equal(envFileIgnored(c, repos.root), true);
+      spawnSync("git", ["add", "-f", c.envFile], { cwd: dir });
+      assert.equal(envFileIgnored(c, repos.root), false, "tracked despite the ignore rule");
+      assert.equal(findEnvFile({ ...c, envFile: "missing.env" }, repos), null);
+    }));
+});
+
+describe("CLI", () => {
+  test("anything but no argument or --check exits 2 with the usage", () => {
+    for (const args of [["--nope"], ["--check", "extra"], ["check"]]) {
+      const r = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
+      assert.equal(r.status, 2, r.stderr);
+      assert.match(r.stderr, /usage: node \.agents\/skills\/db-backup\/scripts\/db-backup\.mjs \[--check\]/);
+    }
+  });
+});

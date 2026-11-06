@@ -1,0 +1,108 @@
+// Tests for smoke-local's config, arguments and shared engine. None of them needs Docker.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { CONFIG, checkNames, parseArgs, smokeConfigErrors } from "./smoke-local.mjs";
+import { appEnv, Checks, envFlags, fakeSecret, insideRepo, loadConfig, portBusy, sharedConfigErrors, UsageError } from "./verify-lib.mjs";
+
+const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "smoke-local.mjs");
+const config = () => JSON.parse(fs.readFileSync(CONFIG, "utf8"));
+
+describe("smoke.json", () => {
+  test("the installed config is valid", () => {
+    const c = loadConfig(CONFIG, smokeConfigErrors);
+    assert.ok(c.healthPath.startsWith("/"));
+  });
+
+  test("a broken config is refused with every problem named", () => {
+    const c = { ...config(), appPort: "80", healthPath: "healthz", secondBoot: "yes", extraEnv: ["A=b c"], mustFailWithout: ["lower"] };
+    c.database = { ...c.database, engine: "oracle" };
+    const errors = [...sharedConfigErrors(c), ...smokeConfigErrors(c)].join("\n");
+    for (const key of ["appPort", "healthPath", "secondBoot", "extraEnv", "mustFailWithout", "database.engine"]) assert.match(errors, new RegExp(key));
+  });
+
+  test("extraEnv can't carry a URL or credentials", () => {
+    const c = { ...config(), extraEnv: ["DATABASE_URL=postgresql://u:p@host/db"] };
+    assert.match(sharedConfigErrors(c).join("\n"), /extraEnv/);
+  });
+});
+
+describe("arguments and checks", () => {
+  test("--port takes a port and nothing else is accepted", () => {
+    assert.equal(parseArgs([]).port, 3100);
+    assert.equal(parseArgs(["--port", "4100"]).port, 4100);
+    for (const bad of [["--port"], ["--port", "80"], ["--port", "70000"], ["--port", "abc"], ["--nope"]]) {
+      assert.throws(() => parseArgs(bad), UsageError);
+    }
+  });
+
+  test("the CLI exits 2 with the usage on a bad argument", () => {
+    const r = spawnSync(process.execPath, [SCRIPT, "--port", "80"], { encoding: "utf8" });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /usage: node \.agents\/skills\/smoke-local\/scripts\/smoke-local\.mjs/);
+  });
+
+  test("the check list follows the config", () => {
+    const c = { ...config(), containerMigrate: [], secondBoot: "true", mustFailWithout: ["APP_SECRET"] };
+    c.database = { ...c.database, engine: "postgres" };
+    assert.deepEqual(checkNames(c), ["build", "db", "boot 1", "boot 2", "no APP_SECRET"]);
+    const bare = { ...c, secondBoot: "false", mustFailWithout: [], containerMigrate: ["node migrate.js"], database: { ...c.database, engine: "none" } };
+    assert.deepEqual(checkNames(bare), ["build", "migrate", "boot 1"]);
+  });
+});
+
+describe("shared engine", () => {
+  test("appEnv gives fake secrets, the local URL, extra pairs and the database URL", () => {
+    const c = { ...config(), secretEnv: ["APP_SECRET"], localUrlEnv: ["APP_URL"], extraEnv: ["UPLOAD_DIR=/tmp/up"] };
+    const env = appEnv(c, { url: "http://localhost:4100", dbUrl: "postgresql://app:app@db:5432/app", port: "3000" });
+    assert.equal(env.NODE_ENV, "production");
+    assert.equal(env.PORT, "3000");
+    assert.equal(env.APP_URL, "http://localhost:4100");
+    assert.equal(env.UPLOAD_DIR, "/tmp/up");
+    assert.equal(env[c.database.urlEnv], "postgresql://app:app@db:5432/app");
+    assert.equal(env.APP_SECRET, fakeSecret("APP_SECRET"));
+    assert.ok(env.APP_SECRET.length >= 32 && env.APP_SECRET.includes("not-a-secret"));
+    assert.ok(!("APP_SECRET" in appEnv(c, { url: "u", omit: ["APP_SECRET"] })));
+    assert.deepEqual(envFlags({ A: "1" }), ["-e", "A=1"]);
+  });
+
+  test("portBusy sees a listening port", async () => {
+    const server = net.createServer();
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      assert.equal(await portBusy(server.address().port), true);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test("insideRepo knows the checkout from a temp folder", () => {
+    const root = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).stdout.trim();
+    if (!root) return;
+    assert.equal(insideRepo(path.join(root, "x"), root), true);
+    assert.equal(insideRepo(os.tmpdir(), root), false);
+  });
+
+  test("Checks prints PASS, FAIL and SKIP rows and the failing log's tail", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "checks-"));
+    try {
+      const log = path.join(dir, "b.log");
+      fs.writeFileSync(log, "one\ntwo\nboom\n");
+      const c = new Checks(["a", "b", "c"]);
+      c.record("a", true, "ok");
+      c.record("b", false, "broke", log);
+      const out = c.summary("skill", 2);
+      assert.match(out, /^skill: FAIL/);
+      assert.match(out, /a {10}PASS  ok/);
+      assert.match(out, /c {10}SKIP/);
+      assert.match(out, /--- last 2 lines: b ---\ntwo\nboom$/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

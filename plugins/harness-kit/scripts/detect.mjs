@@ -141,6 +141,170 @@ export function detectGitFlow(repo, remoteBranches) {
   return { candidate: branches.length > 0, branches, workflows };
 }
 
+const readText = (repo, rel, max = 256 * 1024) => {
+  try {
+    const p = path.join(repo, rel);
+    return fs.statSync(p).size <= max ? fs.readFileSync(p, "utf8") : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Variable names and values from an env example file, never from a real .env. */
+export function parseEnvExample(text) {
+  const vars = [];
+  for (const line of String(text ?? "").split("\n")) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m) vars.push({ name: m[1], value: m[2].replace(/^["']|["']$/g, "") });
+  }
+  return vars;
+}
+
+const SOURCE_DIRS = ["src", "app", "server", "routes", "api", "pages", "apps", "packages"];
+const SOURCE_EXT = /\.(m?[jt]sx?|py|go|rb|php|ex)$/;
+const HEALTH_LITERAL = /["'`](\/(?:api\/)?(?:healthz?|health-check|healthcheck|livez|readyz|ping))["'`]/;
+const HEALTH_FILE = /(^|\/)(api\/)?(healthz?|healthcheck|livez|readyz)(\.[a-z]+)+$/;
+
+/** A health route: a route file named like one, or a quoted path literal in the source. */
+export function findHealthRoute(repo) {
+  let seen = 0;
+  const walk = (rel, depth) => {
+    if (depth > 6 || seen > 3000) return null;
+    let entries;
+    try {
+      entries = fs.readdirSync(path.join(repo, rel), { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      if (e.name.startsWith(".") || e.name === "node_modules") continue;
+      const next = `${rel}/${e.name}`;
+      if (e.isDirectory()) {
+        const hit = walk(next, depth + 1);
+        if (hit) return hit;
+      } else if (SOURCE_EXT.test(e.name)) {
+        seen++;
+        const file = next.match(HEALTH_FILE);
+        if (file && /(^|\/)(routes|api|pages|app)\//.test(next)) return { path: `/${file[2] ?? ""}${file[3]}`, file: next };
+        const m = readText(repo, next)?.match(HEALTH_LITERAL);
+        if (m) return { path: m[1], file: next };
+      }
+    }
+    return null;
+  };
+  for (const d of SOURCE_DIRS) {
+    if (!exists(repo, d)) continue;
+    const hit = walk(d, 0);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+const POSTGRES_DEPS = ["pg", "postgres", "pg-promise", "@neondatabase/serverless", "@vercel/postgres", "slonik", "psycopg", "psycopg2", "asyncpg"];
+
+/** The production database engine, from the ORM config, dependencies and compose files. */
+export function detectDbEngine(repo, deps) {
+  const evidence = [];
+  const prismaSchema = ["prisma/schema.prisma", "schema.prisma"].map((f) => readText(repo, f)).find(Boolean);
+  const provider = prismaSchema?.match(/provider\s*=\s*"(postgresql|postgres|mysql|sqlite|sqlserver|mongodb|cockroachdb)"/)?.[1];
+  if (provider) evidence.push(`prisma provider ${provider}`);
+  const drizzle = ["drizzle.config.ts", "drizzle.config.js", "drizzle.config.mjs"].map((f) => readText(repo, f)).find(Boolean);
+  const dialect = drizzle?.match(/dialect\s*:\s*["'](postgresql|mysql|sqlite|turso|singlestore)["']/)?.[1];
+  if (dialect) evidence.push(`drizzle dialect ${dialect}`);
+  const pgDeps = POSTGRES_DEPS.filter((d) => d in deps);
+  if (pgDeps.length) evidence.push(`dependencies ${pgDeps.join(", ")}`);
+  const compose = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"].map((f) => readText(repo, f)).find(Boolean);
+  const composeImage = compose?.match(/image:\s*["']?(postgres(?:ql)?:[\w.-]+)/)?.[1] ?? null;
+  if (composeImage) evidence.push(`compose image ${composeImage}`);
+  const isPg = ["postgresql", "postgres", "cockroachdb"].includes(provider) || dialect === "postgresql" || pgDeps.length > 0 || Boolean(composeImage);
+  const other = provider && !isPg ? provider : dialect && !isPg ? dialect : null;
+  const major = composeImage?.match(/:(\d+)/)?.[1];
+  return {
+    engine: isPg ? "postgres" : other,
+    image: isPg ? `postgres:${major ?? "16"}-alpine` : null,
+    imageFrom: major ? "compose" : isPg ? "default (confirm production's major version)" : null,
+    evidence,
+  };
+}
+
+/** Docker on PATH, the OS (and WSL), and the Node version the project asks for. */
+export function detectLocalEnv(repo) {
+  const onPath = (bin) =>
+    (process.env.PATH ?? "").split(path.delimiter).some((d) => d && fs.existsSync(path.join(d, bin)));
+  let wsl = false;
+  try {
+    wsl = process.platform === "linux" && /microsoft/i.test(fs.readFileSync("/proc/version", "utf8"));
+  } catch {}
+  return {
+    platform: process.platform,
+    wsl,
+    docker: onPath("docker"),
+    node: process.version,
+    nvmrc: readText(repo, ".nvmrc")?.trim() ?? null,
+  };
+}
+
+/**
+ * Suggestions for the verification modules (smoke-local, e2e-verify, db-backup): the
+ * container, health route, database, env example names, scripts, the test runner, and the
+ * local machine. Read-only: it reads .env.example-style files, never a real .env.
+ */
+export function detectVerification(kit, repo, pkg, pm, deps) {
+  // Workspace packages (apps/*, packages/*) of a monorepo, for the test runner and spec folders.
+  const workspaces = ["apps", "packages"].flatMap((d) => {
+    try {
+      return fs.readdirSync(path.join(repo, d)).filter((n) => exists(repo, `${d}/${n}/package.json`)).map((n) => `${d}/${n}`);
+    } catch {
+      return [];
+    }
+  });
+  const dockerfile = ["Dockerfile", "Containerfile"].find((f) => exists(repo, f)) ?? null;
+  const df = dockerfile ? readText(repo, dockerfile) ?? "" : "";
+  const appPort = df.match(/^\s*EXPOSE\s+(\d{4,5})/m)?.[1] ?? df.match(/^\s*ENV\s+PORT[= ](\d{4,5})/m)?.[1] ?? null;
+  const entrypoint = df.split("\n").filter((l) => /^\s*(CMD|ENTRYPOINT)\b/.test(l)).pop()?.trim() ?? null;
+  const envFile = [".env.example", ".env.sample", ".env.template", "example.env"].find((f) => exists(repo, f)) ?? null;
+  const vars = parseEnvExample(envFile ? readText(repo, envFile) : "");
+  const dbUrlEnv = vars.find((v) => /^(DATABASE|DB|POSTGRES|PG)_?URL$/.test(v.name))?.name ?? null;
+  const names = vars.map((v) => v.name).filter((n) => n !== dbUrlEnv);
+  const scripts = pkg?.scripts ?? {};
+  const script = (...candidates) => {
+    const name = candidates.find((n) => typeof scripts[n] === "string");
+    return name && pm ? { script: name, body: scripts[name], ...classifyCommand(kit, scriptCommand(pm, name)) } : null;
+  };
+  const start = script("start", "serve", "preview");
+  const runners = [
+    ["playwright", "@playwright/test", ["playwright.config.ts", "playwright.config.js", "playwright.config.mjs"]],
+    ["cypress", "cypress", ["cypress.config.ts", "cypress.config.js", "cypress.config.mjs"]],
+  ];
+  const runner = ["", ...workspaces]
+    .flatMap((ws) => {
+      const wsDeps = ws ? { ...readJson(repo, `${ws}/package.json`)?.dependencies, ...readJson(repo, `${ws}/package.json`)?.devDependencies } : deps;
+      const at = (f) => (ws ? `${ws}/${f}` : f);
+      return runners.map(([name, dep, configs]) => ({ name, workspace: ws || null, dep: dep in wsDeps, config: configs.map(at).find((c) => exists(repo, c)) ?? null }));
+    })
+    .find((r) => r.dep || r.config);
+  return {
+    dockerfile,
+    appPort,
+    entrypoint,
+    healthRoute: findHealthRoute(repo),
+    database: { ...detectDbEngine(repo, deps), urlEnv: dbUrlEnv },
+    envExample: envFile,
+    secretCandidates: names.filter((n) => /SECRET|_KEY$|TOKEN|PASSWORD|HMAC/.test(n)),
+    localUrlCandidates: vars.filter((v) => v.name !== dbUrlEnv && /_URL$/.test(v.name) && /localhost|127\.0\.0\.1/.test(v.value)).map((v) => v.name),
+    buildArgCandidates: names.filter((n) => /^(VITE|NEXT_PUBLIC|PUBLIC|REACT_APP|NUXT_PUBLIC)_\w*URL$/.test(n)),
+    scripts: {
+      build: script("build"),
+      start: start && { ...start, hardcodedPort: start.body.match(/--port[ =](\d+)/)?.[1] ?? null },
+      migrate: script("db:migrate", "migrate", "migrate:deploy", "db:migrate:deploy", "db:push"),
+      seed: script("db:seed", "seed"),
+    },
+    e2eRunner: runner ?? null,
+    e2eDirs: ["", ...workspaces].flatMap((ws) => ["e2e", "tests/e2e", "test/e2e", "playwright"].map((d) => (ws ? `${ws}/${d}` : d))).filter((d) => exists(repo, d)),
+    localEnv: detectLocalEnv(repo),
+  };
+}
+
 /** The whole report. Each value is a suggestion for the owner to confirm. */
 export function detect(repo, kit = loadKit()) {
   const root = path.resolve(repo);
@@ -182,6 +346,7 @@ export function detect(repo, kit = loadKit()) {
       .map(([name, file]) => ({ name, file })),
     packageManager: pm,
     commands,
+    verification: pkg || exists(root, "Dockerfile") || exists(root, "Containerfile") ? detectVerification(kit, root, pkg, pm?.name, deps) : null,
     existing: {
       harnessManifest: manifest ? { kitVersion: manifest.kit?.version ?? null, modules: manifest.modules ?? [] } : null,
       instructions: INSTRUCTION_FILES.filter((f) => exists(root, f)),

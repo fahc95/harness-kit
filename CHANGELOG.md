@@ -2,6 +2,15 @@
 
 All notable changes to harness-kit. Versions follow `plugins/harness-kit/.claude-plugin/plugin.json` and `plugins/harness-kit/plugin.json`; bump both in the same PR as the entry.
 
+## 0.5.0 (unreleased)
+
+- Verification modules (ADR-006), upstreamed from the reference implementation and made stack-agnostic. Each is a generic Node engine plus a JSON config the installer fills from discovery:
+  - `smoke-local` (when `has.container`): builds the production image and boots it against a throwaway Postgres, with an optional second boot on the same database, optional migrate commands run in the image, and a boot without each required secret that must fail. Owner-run.
+  - `e2e-verify` (when `has.ui`): runs the E2E suite against the production build served on the host, or the production image with `--docker`, and a throwaway database, then has the agent review every state screenshot. The installer offers to scaffold a first test runner setup when the repo has none.
+  - `db-backup` (when `has.db`, Postgres only): an owner-only `pg_dump` of production to a folder outside the repo, verified with `pg_restore --list` and pruned to the newest few. The URL lives in a git-ignored env file only the script reads; with the host provider's MCP server (`has.dbProviderMcp`), the skill uses it read-only for checks that expose no credential. `--check` is a self-test that never contacts production.
+  - `detect.mjs` reports a `verification` section: Dockerfile, exposed port and entrypoint, health route, database engine and image (Prisma, Drizzle, dependencies, compose), the database URL variable, secret, local URL and build-arg candidates from `.env.example`, build, start (with a hard-coded port), migrate and seed scripts, the E2E runner and spec folders (monorepo workspaces included), and the local machine (Docker, OS, WSL, Node).
+  - `AGENTS.md` mentions each installed skill in "Where to build and verify" and the Definition of Done. New flags `module.smokeLocal`, `module.endToEnd`, `module.dbBackup` and `has.dbProviderMcp`, and the `VERIFY_*`, `SMOKE_*`, `E2E_*`, `BACKUP_*` and `DB_PROVIDER*` tokens.
+
 ## 0.4.0 (unreleased)
 
 - Add modules to an existing install (ADR-005). `harness-init` no longer stops when `.agents/harness.json` exists: it offers the modules not installed yet. `manifest.mjs answers` prints the install's recorded answers as the starting point; the answers file names the new modules in `add`. In add mode, `render.mjs` installs only the added modules' files (plus installed modules' files that apply only now, for example after the owner confirms `has.container`), and reports each installed file whose render changes as a `delta` with a line diff the installer applies by hand, never re-rendering an adapted file. `manifest.mjs check` also waits for every delta, and `write` updates the record: new entries (with `kitVersion` when the kit is newer than the install), new `installed` hashes for files that took a delta, merged values, the new flags and a `history` of the install and each add.
