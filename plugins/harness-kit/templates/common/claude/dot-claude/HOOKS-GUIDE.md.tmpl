@@ -23,6 +23,7 @@ The same file holds `permissions.deny` for Read and Edit on `.env` files at any 
 | Guard | Used by | What it allows |
 |---|---|---|
 | `bash-guard.mjs read-only` | reviewer, retro | Git inspection (`status`, `diff`, `log`, `show`, `ls-files`, `merge-base`, `rev-parse`, `branch --show-current`) and the exact check commands |
+| `bash-guard.mjs verifier` | verifier | The read-only commands, plus `node .agents/skills/e2e-verify/scripts/e2e-verify.mjs` (with optional `--docker` and `-- <spec>`) |
 <!-- kit:if has.db -->
 | `bash-guard.mjs architect` | architect | The read-only commands, plus the exact local-database commands |
 | `path-guard.mjs <paths>` | architect (`{{DB_PATH}}`, `.agents/memory/decisions.md`), retro (`.agents/memory/lessons.md`, `docs/next-steps.md`) | Edit and Write (retro has only Edit) only inside the listed paths, resolved against the session's checkout |

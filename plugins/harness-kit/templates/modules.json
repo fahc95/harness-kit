@@ -6,7 +6,7 @@
       "id": "core",
       "tier": "core",
       "title": "Core harness",
-      "offer": "AGENTS.md, the architect, planner, reviewer, retro and researcher personas, the plan, review, feature and retro skills (.agents/skills/), cross-cutting rules (.agents/rules/) and memory seeds (.agents/memory/).",
+      "offer": "AGENTS.md, the architect, planner, reviewer, verifier, retro and researcher personas, the plan, review, feature and retro skills (.agents/skills/), cross-cutting rules (.agents/rules/) and memory seeds (.agents/memory/).",
       "default": true,
       "requires": [],
       "when": null,
@@ -63,6 +63,12 @@
         {
           "template": "core/dot-agents/personas/reviewer.md.tmpl",
           "target": ".agents/personas/reviewer.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "core/dot-agents/personas/verifier.md.tmpl",
+          "target": ".agents/personas/verifier.md",
           "onExisting": "kit-new",
           "adapt": true
         },
@@ -157,6 +163,11 @@
         {
           "template": "common/claude/dot-claude/agents/reviewer.md.tmpl",
           "target": ".claude/agents/reviewer.md",
+          "onExisting": "kit-new"
+        },
+        {
+          "template": "common/claude/dot-claude/agents/verifier.md.tmpl",
+          "target": ".claude/agents/verifier.md",
           "onExisting": "kit-new"
         },
         {

@@ -120,7 +120,7 @@ Rollback paths:
 - The local container run is the `smoke-local` skill (`.agents/skills/smoke-local/SKILL.md`): propose it with a reason when the image or boot path changes. Only {{OWNER}} runs it.
 <!-- kit:end -->
 <!-- kit:if module.endToEnd -->
-- User-facing flows are verified with the `e2e-verify` skill (`.agents/skills/e2e-verify/SKILL.md`): the E2E suite against a production build and a throwaway database, then a review of every screenshot.
+- User-facing flows are verified with the `e2e-verify` skill (`.agents/skills/e2e-verify/SKILL.md`) by `verifier` (**{{PERSONA_NAME_VERIFIER}}**): running the Playwright E2E suite against a production build and a throwaway database, reviewing every screenshot on a frontier multimodal model, and attaching the rendered screenshots (`gh pr comment --attach`) when reporting on a PR.
 <!-- kit:end -->
 - **V3** LF line endings everywhere (`.gitattributes`).
 
@@ -141,6 +141,7 @@ IDs are role-based and are what files, hooks and skills reference; names are wha
 <!-- kit:end -->
 | `planner` | **{{PERSONA_NAME_PLANNER}}** | Step-by-step implementation plans | Read only | Opus / Pro |
 | `reviewer` | **{{PERSONA_NAME_REVIEWER}}** | Reviews every diff before merge | Read only + git and check Bash | Opus / Pro |
+| `verifier` | **{{PERSONA_NAME_VERIFIER}}** | Empirical E2E (Playwright) and multimodal visual verification against a production build | Read only + git, check and `e2e-verify` Bash | Opus / Pro |
 | `retro` | **{{PERSONA_NAME_RETRO}}** | End-of-session lesson and handoff | Edit `lessons.md` and `next-steps.md` | Sonnet / Flash |
 | `researcher` | **{{PERSONA_NAME_RESEARCHER}}** | Researches a topic in its official docs and returns verified facts with URLs | Read only + web search and fetch | Sonnet / Flash |
 <!-- kit:if module.pm -->
@@ -148,10 +149,10 @@ IDs are role-based and are what files, hooks and skills reference; names are wha
 <!-- kit:end -->
 
 <!-- kit:if module.claude -->
-Cost controls (Claude Code): in `.claude/agents/` the planner, reviewer and architect run at `effort: medium`, every Opus persona has a `maxTurns` cap, and `.agents/skills/review/SKILL.md` sizes each review to the risk of the diff. Raise a persona's effort for a single hard run through the Agent call, not by editing the wrapper.
+Cost controls (Claude Code): in `.claude/agents/` the planner, reviewer, verifier and architect run at `effort: medium`, every Opus persona has a `maxTurns` cap, and `.agents/skills/review/SKILL.md` sizes each review to the risk of the diff. Raise a persona's effort for a single hard run through the Agent call, not by editing the wrapper.
 <!-- kit:end -->
 <!-- kit:if module.antigravity -->
-Cost controls (Antigravity): in `GEMINI.md` the planner, reviewer and architect run with `Model: "pro"` (or `"inherit"`), the retro, researcher and pm personas run with `Model: "flash"`, and `.agents/skills/review/SKILL.md` sizes each review to the risk of the diff.
+Cost controls (Antigravity): in `GEMINI.md` the planner, reviewer, verifier and architect run with `Model: "pro"` (or `"inherit"`), the retro, researcher and pm personas run with `Model: "flash"`, and `.agents/skills/review/SKILL.md` sizes each review to the risk of the diff.
 <!-- kit:end -->
 
 When to run each:
@@ -162,6 +163,7 @@ When to run each:
 <!-- kit:end -->
 - **`planner`** (`.agents/personas/planner.md`): any change involving more than one file, or any new feature. Always before code.
 - **`reviewer`** (`.agents/personas/reviewer.md`): any diff before merging, even self-PRs.
+- **`verifier`** (`.agents/personas/verifier.md`): before merging user-facing changes covered by an E2E spec, or when visual and end-to-end proof is needed. Runs `e2e-verify` (Playwright) against a production build and a throwaway database, inspects every screenshot multimodally on a frontier model, and attaches the rendered screenshots (`gh pr comment --attach`) in PR verification comments.
 - **`retro`** (`.agents/personas/retro.md`): at end of session or slice, given a brief of what happened. Flags decisions for the `architect` to record as ADRs.
 - **`researcher`** (`.agents/personas/researcher.md`): before adopting a dependency or relying on an external tool's behavior. Brief it with the topic, the versions this repo pins, and the questions to answer; it returns facts with official-doc URLs.
 <!-- kit:if module.pm -->
@@ -202,7 +204,7 @@ For any change to be considered done:
 - [ ] If user-facing: validated where users see it
 <!-- kit:end -->
 <!-- kit:if module.endToEnd -->
-- [ ] If user-facing and an E2E spec covers it: `e2e-verify` passed and its screenshots were reviewed
+- [ ] If user-facing and an E2E spec covers it: `e2e-verify` passed, `verifier` (**{{PERSONA_NAME_VERIFIER}}**) reviewed every screenshot, and the verification comment attached the screenshots (`gh pr comment --attach`)
 <!-- kit:end -->
 <!-- kit:if has.db -->
 - [ ] If schema change: migration + seed update + rollback note

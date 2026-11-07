@@ -104,6 +104,26 @@ describe("bash-guard read-only", () => {
   }
 });
 
+describe("bash-guard verifier", () => {
+  for (const command of [
+    "git status",
+    "git diff origin/main...HEAD",
+    ...VERIFY_COMMANDS,
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs",
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs --docker",
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs -- e2e/home.e2e.ts",
+  ]) {
+    bash("verifier", command, ALLOWED);
+  }
+  for (const command of [
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs --unknown",
+    ...BYPASSES,
+    ...DB_COMMANDS,
+  ]) {
+    bash("verifier", command, BLOCKED);
+  }
+});
+
 describe("bash-guard architect", () => {
   for (const command of ["git status", ...VERIFY_COMMANDS, ...DB_COMMANDS]) {
     bash("architect", command, ALLOWED);

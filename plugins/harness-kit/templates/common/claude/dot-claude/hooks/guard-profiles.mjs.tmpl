@@ -35,6 +35,9 @@ const GIT_INSPECT = [
   /^git (status|diff|log|show|ls-files|merge-base|rev-parse)( [\w@^~.:/=,+-]+)*$/,
   /^git branch --show-current$/,
 ];
+const E2E_VERIFY = [
+  /^node \.agents\/skills\/e2e-verify\/scripts\/e2e-verify\.mjs( --docker)?( -- [\w./-]+)*$/,
+];
 const GIT_SUMMARY = "git inspection (status, diff, log, show, ls-files, merge-base, rev-parse, branch --show-current)";
 const list = (commands) => (commands.length ? commands.join(", ") : "none");
 
@@ -42,6 +45,10 @@ export const PROFILES = {
   "read-only": {
     summary: `${GIT_SUMMARY} and the check commands: ${list(VERIFY_COMMANDS)}`,
     allowed: [...GIT_INSPECT, ...exact(VERIFY_COMMANDS)],
+  },
+  verifier: {
+    summary: `${GIT_SUMMARY}, the check commands: ${list(VERIFY_COMMANDS)}, and node .agents/skills/e2e-verify/scripts/e2e-verify.mjs`,
+    allowed: [...GIT_INSPECT, ...exact(VERIFY_COMMANDS), ...E2E_VERIFY],
   },
   architect: {
     summary: `${GIT_SUMMARY}, the check commands: ${list(VERIFY_COMMANDS)}, and the local database commands: ${list(DB_COMMANDS)}`,

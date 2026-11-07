@@ -5,10 +5,11 @@ Read `AGENTS.md` at the repo root first. `AGENTS.md` is the provider-agnostic so
 ## Antigravity wiring
 
 - The main session is **{{PERSONA_NAME_BUILDER}}**, the builder (see the team table in `AGENTS.md`).
-- Personas live in `.agents/personas/` (`architect`, `planner`, `reviewer`, `retro`, `researcher`, and `pm` when installed). Run them as isolated sub-agents using `define_subagent` and `invoke_subagent` so each role starts with a fresh context and returns a single structured report:
+- Personas live in `.agents/personas/` (`architect`, `planner`, `reviewer`, `verifier`, `retro`, `researcher`, and `pm` when installed). Run them as isolated sub-agents using `define_subagent` and `invoke_subagent` so each role starts with a fresh context and returns a single structured report:
   - **`planner`** ({{PERSONA_NAME_PLANNER}}): define with `EnableWriteTools: false`, `EnableSubagentTools: false`; invoke with `Model: "pro"` (or `"inherit"`), instructing it to read `.agents/personas/planner.md` and `AGENTS.md`.
   - **`researcher`** ({{PERSONA_NAME_RESEARCHER}}): invoke the built-in `research` sub-agent (or define with `EnableWriteTools: false`), instructing it to follow `.agents/personas/researcher.md`.
   - **`reviewer`** ({{PERSONA_NAME_REVIEWER}}): define with `EnableWriteTools: true`, `EnableSubagentTools: false` so it can run git inspection and check commands via `run_command` without editing files; invoke with `Model: "pro"` for full reviews or `Model: "flash"` for docs-only diffs (`.agents/skills/review/SKILL.md`).
+  - **`verifier`** ({{PERSONA_NAME_VERIFIER}}): define with `EnableWriteTools: true`, `EnableSubagentTools: false` so it can run `e2e-verify` (Playwright) and inspect screenshots via `view_file` without editing files; invoke with `Model: "pro"` for frontier multimodal visual inspection, instructing it to follow `.agents/personas/verifier.md` and attach screenshots with `gh pr comment --attach "<path>#<alt>"` when posting PR verification comments.
 <!-- kit:if has.db -->
   - **`architect`** ({{PERSONA_NAME_ARCHITECT}}): define with `EnableWriteTools: true`, `EnableSubagentTools: false`; invoke with `Model: "pro"`. It may edit only `.agents/memory/decisions.md` and `{{DB_PATH}}`, and run only read-only git, check and local database commands.
 <!-- kit:end -->
