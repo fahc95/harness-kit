@@ -428,8 +428,8 @@
       "id": "e2e-verify",
       "tier": "common",
       "flag": "module.endToEnd",
-      "title": "e2e-verify skill",
-      "offer": "A skill that runs the end-to-end browser suite against a production build and a throwaway database, then reviews the state screenshots for layout and copy problems. Its build, start and test commands live in a JSON config filled from what the installer detects; the installer offers to scaffold a first browser test setup when the repo has none.",
+      "title": "e2e-verify skill and verifier persona",
+      "offer": "A skill that runs the end-to-end browser suite against a production build and a throwaway database, and the verifier persona that runs it, reviews every state screenshot for layout and copy problems, and attaches the screenshots to its PR verification comment. Its build, start and test commands live in a JSON config filled from what the installer detects; the installer offers to scaffold a first browser test setup when the repo has none.",
       "default": false,
       "requires": [
         "core"
@@ -461,6 +461,18 @@
           "template": "common/e2e-verify/dot-agents/skills/e2e-verify/scripts/verify-lib.mjs.tmpl",
           "target": ".agents/skills/e2e-verify/scripts/verify-lib.mjs",
           "onExisting": "kit-new"
+        },
+        {
+          "template": "common/e2e-verify/dot-agents/personas/verifier.md.tmpl",
+          "target": ".agents/personas/verifier.md",
+          "onExisting": "kit-new",
+          "adapt": true
+        },
+        {
+          "template": "common/e2e-verify/dot-claude/agents/verifier.md.tmpl",
+          "target": ".claude/agents/verifier.md",
+          "onExisting": "kit-new",
+          "when": "module.claude"
         },
         {
           "template": "common/e2e-verify/dot-claude/skills/e2e-verify/SKILL.md.tmpl",

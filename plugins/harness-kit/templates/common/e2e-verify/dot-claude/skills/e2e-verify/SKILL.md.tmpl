@@ -1,7 +1,8 @@
 ---
 name: e2e-verify
-description: Run the end-to-end browser suite against a production build and a throwaway database, then review the state screenshots for layout and copy problems. Use when verifying a branch or PR that changes user-facing routes, flows, auth redirects or UI states.
+description: Run the end-to-end browser suite against a production build and a throwaway database, then review the state screenshots on a frontier model for layout and copy problems and show them in the report. Use when verifying a branch or PR that changes user-facing routes, flows, auth redirects or UI states.
 argument-hint: "[optional: PR number, or a spec to run]"
+model: opus
 ---
 
 Read `.agents/skills/e2e-verify/SKILL.md` and follow it exactly. It is the source of truth for this skill; if this file disagrees with it, the `.agents/` file wins.

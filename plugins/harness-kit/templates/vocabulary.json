@@ -160,6 +160,14 @@
       "default": "Galilei",
       "example": "Reviewer"
     },
+    "PERSONA_NAME_VERIFIER": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
+      "description": "Display name of the verifier (E2E & multimodal visual testing) persona.",
+      "source": "answers",
+      "default": "Kepler",
+      "example": "Verifier"
+    },
     "PERSONA_NAME_RETRO": {
       "type": "string",
       "pattern": "^\\p{L}[\\p{L} .'-]{0,30}$",
