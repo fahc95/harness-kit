@@ -35,9 +35,14 @@ const GIT_INSPECT = [
   /^git (status|diff|log|show|ls-files|merge-base|rev-parse)( [\w@^~.:/=,+-]+)*$/,
   /^git branch --show-current$/,
 ];
+// kit:if module.endToEnd
+// e2e-verify with optional --docker, then spec paths after one `--`. A pass-through token may not
+// start with `-`, so the verifier can't hand the runner a flag that writes files (snapshot updates,
+// another config, an output folder).
 const E2E_VERIFY = [
-  /^node \.agents\/skills\/e2e-verify\/scripts\/e2e-verify\.mjs( --docker)?( -- [\w./-]+)*$/,
+  /^node \.agents\/skills\/e2e-verify\/scripts\/e2e-verify\.mjs( --docker)?( --( [\w.][\w./-]*)+)?$/,
 ];
+// kit:end
 const GIT_SUMMARY = "git inspection (status, diff, log, show, ls-files, merge-base, rev-parse, branch --show-current)";
 const list = (commands) => (commands.length ? commands.join(", ") : "none");
 
@@ -46,10 +51,12 @@ export const PROFILES = {
     summary: `${GIT_SUMMARY} and the check commands: ${list(VERIFY_COMMANDS)}`,
     allowed: [...GIT_INSPECT, ...exact(VERIFY_COMMANDS)],
   },
+  // kit:if module.endToEnd
   verifier: {
-    summary: `${GIT_SUMMARY}, the check commands: ${list(VERIFY_COMMANDS)}, and node .agents/skills/e2e-verify/scripts/e2e-verify.mjs`,
+    summary: `${GIT_SUMMARY}, the check commands: ${list(VERIFY_COMMANDS)}, and node .agents/skills/e2e-verify/scripts/e2e-verify.mjs with spec paths`,
     allowed: [...GIT_INSPECT, ...exact(VERIFY_COMMANDS), ...E2E_VERIFY],
   },
+  // kit:end
   architect: {
     summary: `${GIT_SUMMARY}, the check commands: ${list(VERIFY_COMMANDS)}, and the local database commands: ${list(DB_COMMANDS)}`,
     allowed: [...GIT_INSPECT, ...exact(VERIFY_COMMANDS), ...exact(DB_COMMANDS)],

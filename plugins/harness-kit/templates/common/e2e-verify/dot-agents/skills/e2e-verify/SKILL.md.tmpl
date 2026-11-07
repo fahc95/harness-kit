@@ -1,11 +1,11 @@
 ---
 name: e2e-verify
-description: Run the end-to-end Playwright browser suite against a production build and a throwaway database, then review the state screenshots on a frontier model for layout and copy problems and attach screenshots to PR comments. Reads the PR or plan acceptance criteria first. Use when verifying a branch or PR that changes user-facing routes, multi-step flows, auth or session redirects, or UI states.
+description: Run the end-to-end browser suite against a production build and a throwaway database, then review the state screenshots on a frontier model for layout and copy problems and show them, never bare filenames, in the report. Reads the PR or plan acceptance criteria first. Use when verifying a branch or PR that changes user-facing routes, multi-step flows, auth or session redirects, or UI states.
 ---
 
 # Skill: e2e-verify, self-contained end-to-end and visual verification
 
-This skill proves user flows with Playwright in a real headless browser against the production build, then has the `verifier` persona (**{{PERSONA_NAME_VERIFIER}}**, `.agents/personas/verifier.md`) inspect what was rendered and report with attached screenshots. It **must run on a frontier multimodal model on all providers** (`Opus` in Claude Code, `Pro` in Antigravity), never a lightweight model. It never touches the dev database or a running dev server: the database is a throwaway container in tmpfs, and the app runs on its own port.
+This skill proves user flows in a real browser against the production build, then has the `verifier` persona (**{{PERSONA_NAME_VERIFIER}}**, `.agents/personas/verifier.md`) inspect what was rendered and report with the screenshots shown. It **must run on a frontier multimodal model on all providers** (`Opus` in Claude Code, `Pro` in Antigravity), never a lightweight model. It never touches the dev database or a running dev server: the database is a throwaway container in tmpfs, and the app runs on its own port.
 
 ## When to run
 
@@ -21,7 +21,7 @@ This skill proves user flows with Playwright in a real headless browser against 
 2. **db:** a throwaway database bound only to `127.0.0.1`, data in tmpfs.
 3. **setup:** the configured commands that prepare it (migrations, seed), with the database URL pointing at it.
 4. **build and boot:** by default (`mode`), either the production build served on the host (`build`, then `start`), or, with `--docker`, the production image on a private network, the same boot as smoke-local. It polls the health path until it answers 200. Secrets are fake, and outbound services get no real keys.
-5. **e2e:** the configured Playwright test command (`test` in `e2e.json`, for example `npx playwright test`), with `E2E_BASE_URL` set to the app and `E2E_ARTIFACT_DIR` set to the artifact folder. Specs write their full-page state screenshots there.
+5. **e2e:** the configured test command (`test` in `e2e.json`), with `E2E_BASE_URL` set to the app and `E2E_ARTIFACT_DIR` set to the artifact folder. Specs write their full-page state screenshots there.
 6. **Cleanup:** the server, containers and network are removed on pass, fail or Ctrl-C.
 
 ## Step by step
@@ -34,8 +34,8 @@ This skill proves user flows with Playwright in a real headless browser against 
 <!-- kit:if !module.openPr -->
 - For a branch or PR, read its description and the linked plan in `docs/plans/`.
 <!-- kit:end -->
-<!-- kit:adapt: Say where committed Playwright E2E specs live in this repo and how they are named (for example e2e/<feature>.e2e.ts in playwright.config.ts), and that one-off exploratory specs go in the artifact folder and are deleted before finishing. -->
-- In every Playwright spec, save full-page screenshots (`page.screenshot({ path: ..., fullPage: true })`) at the key states into `process.env.E2E_ARTIFACT_DIR`, numbered in order (`01-<state>.png`, `02-<state>.png`).
+<!-- kit:adapt: Say where committed E2E specs live in this repo and how they are named (for example e2e/<feature>.e2e.ts), that one-off exploratory specs go in the artifact folder and are deleted before finishing, and give this runner's full-page screenshot call. -->
+- In every spec, save full-page screenshots at the key states into `process.env.E2E_ARTIFACT_DIR`, numbered in order (`01-<state>.png`, `02-<state>.png`).
 
 ### 2. Run it
 
@@ -43,52 +43,26 @@ From the checkout root:
 
     node .agents/skills/e2e-verify/scripts/e2e-verify.mjs
 
-Pass arguments to Playwright after `--`, for example one spec file:
+Pass spec paths to the test runner after `--`, for example one spec file:
 
     node .agents/skills/e2e-verify/scripts/e2e-verify.mjs -- <path to one spec>
 
-<!-- kit:adapt: Give the one-time command that installs Playwright's browser in this repo (for example npx playwright install chromium), and any machine-specific note (WSL libraries, an nvm Node version). -->
+<!-- kit:adapt: Give the one-time command that installs the test runner's browser in this repo (for example the runner's install command for chromium), and any machine-specific note (WSL libraries, an nvm Node version). -->
 
 ### 3. Review the screenshots
 
-After `e2e-verify: PASS`, open **every** listed screenshot with your multimodal file-reading tool (`Read` / `view_file`) on a frontier model (`Opus` / `Pro`) and check what was actually rendered:
+After `e2e-verify: PASS`, open **every** listed screenshot with your file-reading tool (`Read` / `view_file`) on a frontier model (`Opus` / `Pro`) and check what was actually rendered against the inspection checklist in `.agents/personas/verifier.md`.
 
-- **Mobile viewport & layout:** 390x844 mobile device emulation with touch (`playwright.config.ts`), intact card borders, zero horizontal overflow, no clipped text or overlapping elements, and primary actions within thumb reach.
-- **Touch targets:** every interactive control is at least 44px tall and wide.
-- **Contrast & hierarchy:** legible contrast ratios across text, badges, form controls and status states.
-- **Copy & localization:** consistent language, regional form of address, accents, and singular/plural agreement; no raw translation keys, leaked placeholders, or untranslated strings.
-
-<!-- kit:adapt: Write any additional project-specific visual and copy review rules for this project: the device context, brand or layout constraints, and specific localization conventions. One bullet each. -->
-
-### 4. Report (Mandatory Screenshot Attachments)
+### 4. Report
 
 Give {{OWNER}} a verification summary (**{{PERSONA_NAME_VERIFIER}}** format in `.agents/personas/verifier.md`):
 
 - The check table as printed (`db`, `setup`, `build`, `boot`, `e2e`).
-- Each acceptance criterion and the Playwright assertion + screenshot that proves it.
-- Visual findings from the screenshots, with every cited screenshot attached or embedded.
+- Each acceptance criterion and the assertion and screenshot that prove it.
+- Visual findings from the screenshots, each with its screenshot shown.
 - What still needs a human on a real device (haptics, native app handoffs, real network or sunlight conditions).
 
-**Screenshot attachment rule (strictly enforced):**
-- **Never post a PR verification comment or chat report that lists bare screenshot filenames** (for example `- Home (01-home.png): Mobile viewport...`) without uploading or embedding the rendered images.
-- When posting a verification report to a GitHub PR with `gh pr comment` (requires GitHub CLI >= v2.99.0), upload every screenshot using `--attach "<path>#<alt>"` paired with a matching markdown image tag `![<alt>](<path>)` in `--body` (or `--body-file`). GitHub CLI v2.99.0+ automatically uploads each attached file to GitHub storage and rewrites the local markdown image path to a permanent GitHub asset URL:
-<!-- kit:if module.openPr -->
-  ```bash
-  GH_TOKEN=$(gh auth token --user {{GH_ACCOUNT}}) gh pr comment <PR> --repo {{GH_REPO}} \
-    --body "### Visual Review ({{PERSONA_NAME_VERIFIER}})\n\n- **Home**: ![Home](path/to/01-home.png)\n- **Login**: ![Login](path/to/02-login.png)" \
-    --attach "path/to/01-home.png#Home screen at 390x844" \
-    --attach "path/to/02-login.png#Login screen at 390x844"
-  ```
-<!-- kit:end -->
-<!-- kit:if !module.openPr -->
-  ```bash
-  gh pr comment <PR> --repo <repo> \
-    --body "### Visual Review ({{PERSONA_NAME_VERIFIER}})\n\n- **Home**: ![Home](path/to/01-home.png)\n- **Login**: ![Login](path/to/02-login.png)" \
-    --attach "path/to/01-home.png#Home screen at 390x844" \
-    --attach "path/to/02-login.png#Login screen at 390x844"
-  ```
-<!-- kit:end -->
-- When reporting in chat, embed the rendered images directly (`![<alt>](/absolute/path/to/01-home.png)`) rather than listing bare filenames.
+Show every screenshot you cite, never a bare filename: embedded in chat, attached in a PR comment. The rule, the `gh pr comment --attach` command and its fallback are in "Reporting screenshots" in `.agents/personas/verifier.md`.
 
 On a failure, quote the failing check and the log lines that matter, not the whole log.
 

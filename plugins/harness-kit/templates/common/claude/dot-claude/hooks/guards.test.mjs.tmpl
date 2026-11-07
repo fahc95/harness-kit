@@ -104,6 +104,7 @@ describe("bash-guard read-only", () => {
   }
 });
 
+// kit:if module.endToEnd
 describe("bash-guard verifier", () => {
   for (const command of [
     "git status",
@@ -112,17 +113,24 @@ describe("bash-guard verifier", () => {
     "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs",
     "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs --docker",
     "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs -- e2e/home.e2e.ts",
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs --docker -- e2e/home.e2e.ts e2e/login.e2e.ts",
   ]) {
     bash("verifier", command, ALLOWED);
   }
   for (const command of [
     "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs --unknown",
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs -- --update-snapshots",
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs -- e2e/home.e2e.ts --update-snapshots",
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs -- -c other.config.ts",
+    "node .agents/skills/e2e-verify/scripts/e2e-verify.mjs --",
+    "gh pr view 1",
     ...BYPASSES,
     ...DB_COMMANDS,
   ]) {
     bash("verifier", command, BLOCKED);
   }
 });
+// kit:end
 
 describe("bash-guard architect", () => {
   for (const command of ["git status", ...VERIFY_COMMANDS, ...DB_COMMANDS]) {

@@ -423,6 +423,7 @@ describe("rendered claude and antigravity hooks", () => {
     ["has.db true", examples, allFlags(true)],
     ["has.db false", examples, { ...allFlags(true), "has.db": false }],
     ["no check commands", { ...examples, VERIFY_COMMANDS_JSON: [] }, { ...allFlags(true), "has.checks": false }],
+    ["module.endToEnd false", examples, { ...allFlags(true), "module.endToEnd": false }],
   ]) {
     test(`claude guards.test passes with ${name}`, () =>
       withTempRepo((root) => {
@@ -583,6 +584,48 @@ describe("rendered verification modules", () => {
         assert.ok(passed >= min, `only ${passed} ${id} tests ran`);
       }));
   }
+
+  test("verifier: its persona, wrapper and docs render only with module.endToEnd", () =>
+    withTempRepo((root) => {
+      const off = { ...allFlags(true), "module.endToEnd": false };
+      for (const id of ["core", "claude", "antigravity"]) renderModule(id, root, examples, off);
+      assert.ok(!fs.existsSync(path.join(root, ".agents/personas/verifier.md")));
+      assert.ok(!fs.existsSync(path.join(root, ".claude/agents/verifier.md")));
+      for (const f of ["AGENTS.md", "CLAUDE.md", "GEMINI.md", ".claude/HOOKS-GUIDE.md", ".claude/hooks/guard-profiles.mjs"]) {
+        const text = fs.readFileSync(path.join(root, f), "utf8");
+        assert.ok(!/personas\/verifier|agents\/verifier|bash-guard\.mjs verifier|verifier: \{|\*\*`verifier`\*\*/.test(text), `${f} wires the verifier without module.endToEnd`);
+      }
+
+      renderModule("e2e-verify", root, examples, allFlags(true));
+      assert.ok(fs.existsSync(path.join(root, ".agents/personas/verifier.md")));
+      assert.ok(fs.existsSync(path.join(root, ".claude/agents/verifier.md")));
+    }));
+
+  test("verifier: fenced blocks in the persona and skill open and close in pairs", () =>
+    withTempRepo((root) => {
+      renderModule("e2e-verify", root, examples, allFlags(true));
+      for (const f of [".agents/personas/verifier.md", ".agents/skills/e2e-verify/SKILL.md"]) {
+        const stack = [];
+        for (const line of fs.readFileSync(path.join(root, f), "utf8").split("\n")) {
+          const fence = line.trim().match(/^(`{3,})(\S*)$/)?.[1];
+          if (!fence) continue;
+          if (stack.length && fence === stack.at(-1) && !line.trim().slice(fence.length)) stack.pop();
+          else stack.push(fence);
+        }
+        assert.deepEqual(stack, [], `${f} has an unclosed code fence`);
+      }
+    }));
+
+  test("verifier: PR comment examples use --body-file and pair each image with an --attach of the same path and alt", () =>
+    withTempRepo((root) => {
+      renderModule("e2e-verify", root, examples, allFlags(true));
+      const persona = fs.readFileSync(path.join(root, ".agents/personas/verifier.md"), "utf8");
+      assert.ok(!/--body "/.test(persona), "a double-quoted --body turns \\n into literal text");
+      const images = [...persona.matchAll(/!\[([^\]<]+)\]\((<artifact-dir>\/[^)]+)\)/g)].map(([, alt, p]) => `${p}#${alt}`);
+      const attaches = [...persona.matchAll(/--attach "([^"]+)"/g)].map(([, a]) => a);
+      assert.ok(images.length > 0);
+      for (const a of attaches.filter((x) => !x.includes("<alt>"))) assert.ok(images.includes(a), `--attach "${a}" has no matching image tag`);
+    }));
 
   test("db-backup: the provider MCP section renders only with has.dbProviderMcp", () =>
     withTempRepo((root) => {
